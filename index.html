@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light only">
+<meta name="supported-color-schemes" content="light">
+<title>きん肉こまつ｜予約・チケット管理</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    color-scheme: light only;
+    --ink:#0a0a0a;
+    --paper:#ffffff;
+    --smoke:#f4f4f5;
+    --line:#e4e4e7;
+    --muted:#71717a;
+    --danger:#dc2626;
+    --ok:#16a34a;
+    --serif:"Hiragino Mincho ProN","Yu Mincho","YuMincho",serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;color-scheme:light;background:#ffffff}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue","Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;
+    background:var(--paper);color:var(--ink);line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  /* ===== スプラッシュ ===== */
+  #splash{position:fixed;inset:0;background:var(--paper);z-index:999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;transition:opacity .55s ease}
+  #splash.bye{opacity:0;pointer-events:none}
+  #splash svg{width:112px;height:112px;color:var(--ink)}
+  #splash .ring{stroke-dasharray:290;stroke-dashoffset:290;animation:draw 1s ease-out forwards}
+  #splash .ring2{stroke-dasharray:240;stroke-dashoffset:240;animation:draw .9s ease-out .25s forwards}
+  #splash .meat{opacity:0;animation:fadein .55s ease .85s forwards}
+  @keyframes draw{to{stroke-dashoffset:0}}
+  @keyframes fadein{to{opacity:1}}
+  .sp-name{writing-mode:vertical-rl;font-family:var(--serif);font-size:30px;font-weight:600;letter-spacing:.28em;opacity:0;animation:fadein .7s ease 1.05s forwards;height:150px}
+  .sp-tag{font-size:10px;letter-spacing:.45em;color:var(--muted);opacity:0;animation:fadein .7s ease 1.3s forwards}
+  /* ===== ブランドヘッダー ===== */
+  header.brand{
+    border-bottom:2px solid var(--ink);
+    padding:14px 18px;display:flex;align-items:center;justify-content:space-between;
+    position:sticky;top:0;background:var(--paper);z-index:50;
+  }
+  .logo{display:flex;align-items:center;gap:9px;font-weight:900;letter-spacing:-.02em}
+  .logo svg{width:30px;height:30px;color:var(--ink)}
+  .logo .big{font-size:21px}
+  .logo .tag{font-size:10px;font-weight:700;letter-spacing:.22em;color:var(--muted);margin-left:4px}
+  .who{font-size:12px;color:var(--muted);text-align:right}
+  .who b{display:block;color:var(--ink);font-size:13px}
+  /* ===== レイアウト ===== */
+  main{max-width:760px;margin:0 auto;padding:20px 16px 100px}
+  .card{border:1.5px solid var(--ink);border-radius:14px;padding:18px;margin-bottom:16px;background:var(--paper)}
+  .card h2{font-size:13px;letter-spacing:.18em;text-transform:uppercase;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+  .card h2::before{content:"";width:10px;height:10px;background:var(--ink);border-radius:2px;display:inline-block}
+  /* ===== 挨拶＆チケットバナー ===== */
+  .hello{font-family:var(--serif);font-size:21px;font-weight:600;margin:2px 2px 12px;letter-spacing:.04em}
+  .hello .nx{display:block;font-family:inherit;font-size:13px;color:var(--muted);font-weight:500;margin-top:2px;letter-spacing:.02em}
+  .ticket-banner{
+    background:var(--ink);color:var(--paper);border-radius:14px;padding:20px;margin-bottom:16px;
+    display:flex;align-items:center;justify-content:space-between;position:relative;overflow:hidden;
+  }
+  .ticket-banner .num{font-size:46px;font-weight:900;line-height:1;letter-spacing:-.03em}
+  .ticket-banner .lbl{font-size:11px;letter-spacing:.2em;color:#a1a1aa}
+  .ticket-banner svg{position:absolute;right:-14px;bottom:-22px;width:110px;height:110px;color:#27272a;opacity:.9}
+  .ticket-banner>div{position:relative;z-index:1}
+  /* ===== ボタン ===== */
+  button{font-family:inherit;cursor:pointer;border:none;font-weight:700}
+  .btn{background:var(--ink);color:var(--paper);padding:13px 18px;border-radius:10px;font-size:15px;width:100%;transition:transform .08s,opacity .15s}
+  .btn:active{transform:scale(.98)}
+  .btn:disabled{opacity:.35;cursor:not-allowed}
+  .btn.ghost{background:var(--paper);color:var(--ink);border:1.5px solid var(--ink)}
+  .btn.sm{width:auto;padding:8px 14px;font-size:13px;border-radius:8px}
+  .btn.danger{background:var(--danger)}
+  .btn.row{margin-top:0}
+  /* ===== フォーム ===== */
+  label.fld{display:block;font-size:12px;font-weight:700;letter-spacing:.05em;margin:12px 0 5px;color:var(--muted)}
+  input,select,textarea{
+    width:100%;padding:12px;border:1.5px solid var(--line);border-radius:9px;font-size:15px;font-family:inherit;background:var(--paper);color:var(--ink);
+  }
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--ink)}
+  textarea{min-height:70px;resize:vertical}
+  /* ===== タブ ===== */
+  nav.tabs{position:fixed;bottom:0;left:0;right:0;background:var(--paper);border-top:2px solid var(--ink);display:flex;z-index:50}
+  nav.tabs button{flex:1;background:none;padding:10px 4px 12px;font-size:10.5px;letter-spacing:.08em;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:4px;font-weight:700}
+  nav.tabs button.on{color:var(--ink)}
+  nav.tabs .ic{width:22px;height:22px;display:flex;align-items:center;justify-content:center}
+  nav.tabs button.on .ic{background:var(--ink);color:var(--paper);border-radius:7px}
+  /* ===== 予約スロット ===== */
+  .daybar{display:flex;gap:7px;overflow-x:auto;padding-bottom:6px;margin-bottom:14px}
+  .daybar button{flex:0 0 auto;border:1.5px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 12px;text-align:center;min-width:58px}
+  .daybar button.on{border-color:var(--ink);background:var(--ink);color:var(--paper)}
+  .daybar .dow{font-size:10px;color:inherit;opacity:.7}
+  .daybar .dnum{font-size:18px;font-weight:900}
+  .slots{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .slot{border:1.5px solid var(--line);border-radius:10px;padding:12px 6px;text-align:center;background:var(--paper)}
+  .slot .t{font-size:16px;font-weight:900}
+  .slot .s{font-size:10px;color:var(--muted);margin-top:2px}
+  .slot.open{cursor:pointer}
+  .slot.open:active{border-color:var(--ink)}
+  .slot.mine{border-color:var(--ink);background:var(--smoke)}
+  .slot.taken{opacity:.45}
+  .slot.joinable{border-color:var(--ink);border-style:dashed;cursor:pointer}
+  /* ===== バッジ／リスト ===== */
+  .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px;border:1.2px solid var(--ink);letter-spacing:.04em}
+  .pill.fill{background:var(--ink);color:var(--paper)}
+  .row{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-bottom:1px solid var(--line);gap:10px}
+  .row:last-child{border-bottom:none}
+  .row .meta{font-size:12px;color:var(--muted)}
+  .row .ttl{font-weight:700}
+  .row.tap{cursor:pointer}
+  .row.tap:active{background:var(--smoke)}
+  .empty{text-align:center;color:var(--muted);padding:26px 10px;font-size:13px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .chip{font-size:11px;border:1.2px solid var(--line);border-radius:20px;padding:3px 10px;cursor:pointer;background:var(--paper);color:var(--ink);font-weight:600}
+  .chip.sel{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+  /* ===== モーダル ===== */
+  .ov{position:fixed;inset:0;background:rgba(10,10,10,.55);display:none;align-items:flex-end;justify-content:center;z-index:100;padding:0}
+  .ov.show{display:flex}
+  .sheet{background:var(--paper);width:100%;max-width:760px;border-radius:20px 20px 0 0;border-top:2px solid var(--ink);padding:22px 18px calc(22px + env(safe-area-inset-bottom));max-height:90vh;overflow-y:auto;animation:up .22s ease;position:relative}
+  @keyframes up{from{transform:translateY(40px);opacity:.6}to{transform:translateY(0);opacity:1}}
+  .sheet h3{font-size:18px;font-weight:900;margin-bottom:4px}
+  .sheet .sub{font-size:13px;color:var(--muted);margin-bottom:16px}
+  .close{position:absolute;top:14px;right:16px;font-size:22px;background:none;color:var(--muted)}
+  /* ===== ヒアリングシート ウィザード ===== */
+  #wiz{position:fixed;inset:0;background:var(--paper);z-index:300;display:none;flex-direction:column}
+  #wiz.show{display:flex}
+  .wiz-top{padding:14px 18px;display:flex;align-items:center;gap:12px;border-bottom:1.5px solid var(--line)}
+  .wiz-step{font-size:12px;font-weight:900;letter-spacing:.05em;white-space:nowrap}
+  .wiz-prog{flex:1;height:6px;background:var(--smoke);border-radius:6px;overflow:hidden}
+  .wiz-prog i{display:block;height:100%;background:var(--ink);transition:width .35s ease}
+  .wiz-skip{font-size:12px;color:var(--muted);background:none;text-decoration:underline;white-space:nowrap}
+  .wiz-body{flex:1;overflow-y:auto;padding:30px 22px;max-width:560px;margin:0 auto;width:100%;animation:wizin .28s ease}
+  @keyframes wizin{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}
+  .wiz-body h3{font-family:var(--serif);font-size:24px;font-weight:600;letter-spacing:.04em;margin-bottom:6px}
+  .wiz-body .lead{font-size:13px;color:var(--muted);margin-bottom:22px}
+  .wiz-foot{padding:14px 18px calc(14px + env(safe-area-inset-bottom));border-top:1.5px solid var(--line);display:flex;gap:10px;max-width:560px;margin:0 auto;width:100%}
+  .bigchips{display:flex;flex-wrap:wrap;gap:9px;margin:4px 0 8px}
+  .bigchips .chip{font-size:14px;padding:11px 17px;border-radius:12px;border-width:1.5px}
+  .wiz-done{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:30px;text-align:center}
+  .wiz-done .arm{animation:pump 1.1s ease infinite alternate;font-size:64px}
+  @keyframes pump{from{transform:scale(1) rotate(-4deg)}to{transform:scale(1.18) rotate(4deg)}}
+  .wiz-done h3{font-family:var(--serif);font-size:26px;font-weight:600;letter-spacing:.05em}
+  .wiz-done p{font-size:13px;color:var(--muted)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  /* ===== ヒアリングシート閲覧 ===== */
+  .kv{display:flex;border-bottom:1px solid var(--line);padding:9px 0;gap:12px;font-size:13.5px}
+  .kv:last-child{border:none}
+  .kv .k{flex:0 0 96px;color:var(--muted);font-weight:700;font-size:12px;padding-top:1px}
+  .kv .v{flex:1;white-space:pre-wrap}
+  .kv .v.dim{color:#c4c4c8}
+  /* ===== ログイン ===== */
+  .auth-wrap{max-width:380px;margin:5vh auto 0;padding:0 22px 40px}
+  .auth-logo{text-align:center;margin-bottom:26px}
+  .auth-logo svg{width:84px;height:84px;color:var(--ink)}
+  .auth-logo .big{font-family:var(--serif);font-size:32px;font-weight:600;letter-spacing:.1em;margin-top:8px}
+  .auth-logo .tag{font-size:10px;letter-spacing:.4em;color:var(--muted);margin-top:4px}
+  .switch{text-align:center;font-size:13px;color:var(--muted);margin-top:16px}
+  .switch a{color:var(--ink);font-weight:700;text-decoration:underline;cursor:pointer}
+  .msg{font-size:13px;padding:10px 12px;border-radius:9px;margin-top:12px;display:none}
+  .msg.show{display:block}
+  .msg.err{background:#fef2f2;color:var(--danger);border:1px solid #fecaca}
+  .msg.ok{background:#f0fdf4;color:var(--ok);border:1px solid #bbf7d0}
+  .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:12px 20px;border-radius:30px;font-size:13px;font-weight:700;z-index:400;opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;max-width:90vw;text-align:center}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-6px)}
+  .hide{display:none!important}
+  .seg{display:flex;border:1.5px solid var(--ink);border-radius:10px;overflow:hidden;margin-bottom:14px}
+  .seg button{flex:1;background:var(--paper);color:var(--ink);padding:9px;font-size:13px}
+  .seg button.on{background:var(--ink);color:var(--paper)}
+  .small{font-size:12px;color:var(--muted)}
+  .loader{text-align:center;padding:40px;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+
+<!-- スプラッシュ -->
+<div id="splash"></div>
+
+<!-- ===================== ログイン ===================== -->
+<div id="authView">
+  <div class="auth-wrap">
+    <div class="auth-logo" id="authLogo"></div>
+    <div class="seg">
+      <button id="segLogin" class="on" onclick="setAuthMode('login')">ログイン</button>
+      <button id="segSignup" onclick="setAuthMode('signup')">新規登録</button>
+    </div>
+    <div id="nameFld" class="hide">
+      <label class="fld">お名前</label>
+      <input id="auName" placeholder="筋肉 こまつ" autocomplete="name">
+    </div>
+    <label class="fld">メールアドレス</label>
+    <input id="auEmail" type="email" placeholder="you@example.com" autocomplete="email">
+    <label class="fld">パスワード</label>
+    <input id="auPass" type="password" placeholder="6文字以上" autocomplete="current-password">
+    <div style="height:18px"></div>
+    <button class="btn" id="authBtn" onclick="doAuth()">ログイン</button>
+    <div id="authMsg" class="msg"></div>
+    <div class="switch">
+      <span id="switchTxt">アカウントをお持ちでない方は </span>
+      <a id="switchLink" onclick="setAuthMode('signup')">新規登録</a>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== アプリ本体 ===================== -->
+<div id="appView" class="hide">
+  <header class="brand">
+    <div class="logo" id="hdrLogo"></div>
+    <div class="who"><b id="whoName">—</b><span onclick="logout()" style="cursor:pointer;text-decoration:underline">ログアウト</span></div>
+  </header>
+  <main id="screen"><div class="loader">読み込み中…</div></main>
+  <nav class="tabs" id="tabs"></nav>
+</div>
+
+<!-- 予約シート等のモーダル -->
+<div class="ov" id="ov">
+  <div class="sheet">
+    <button class="close" onclick="closeOv()">×</button>
+    <div id="ovBody"></div>
+  </div>
+</div>
+
+<!-- ヒアリングシート ウィザード -->
+<div id="wiz">
+  <div class="wiz-top">
+    <span class="wiz-step" id="wizStep">1/6</span>
+    <div class="wiz-prog"><i id="wizProg" style="width:16%"></i></div>
+    <button class="wiz-skip" onclick="wizSkip()">あとで入力</button>
+  </div>
+  <div class="wiz-body" id="wizBody"></div>
+  <div class="wiz-foot" id="wizFoot"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   設定：ここに Supabase の値を入れてください
+   ============================================================ */
+const SUPABASE_URL  = "ここにProject URLを貼る";
+const SUPABASE_ANON = "ここにanon keyを貼る";
+/* 管理者について：最初に登録したアカウントが自動でトレーナー（管理者）になります。
+   以降は管理者が「会員」タブから権限を付与できます。 */
+
+/* デモモード：true にするとログイン不要・ダミーデータで動きます */
+const DEMO = false;
+
+/* ====== 営業時間枠（管理画面から変更可） ====== */
+let SETTINGS = { openHour:10, closeHour:21, weekdaysOnly:true, maxParty:3 };
+
+let sb=null, me=null, profile=null, authMode='login', curTab='reserve', selDate=null;
+
+/* ============ ロゴ（きん肉こまつ・腕マーク）SVG ============ */
+function logoSVG(animated){
+  const a=animated?'':' style="stroke-dashoffset:0;animation:none"';
+  const b=animated?'':' style="opacity:1;animation:none"';
+  return `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="none" aria-label="きん肉こまつ">
+  <circle class="ring" cx="50" cy="50" r="45" stroke="currentColor" stroke-width="6.5"${a}/>
+  <circle class="ring2" cx="50" cy="50" r="37" stroke="currentColor" stroke-width="2.6"${a}/>
+  <g class="meat" fill="currentColor" stroke="none"${b}>
+    <rect x="49" y="13" width="21" height="15" rx="4.5" transform="rotate(14 59.5 20.5)"/>
+    <path d="M67 27 C75.5 34 77.5 47 71 57 C67.5 62.5 61.5 66 55.5 67.5 L50 58.5 C57.5 55 63 49 63.5 41 C63.8 35.5 61.5 31 58 28 Z"/>
+    <path d="M19.5 59.5 C30 47.5 49 45.5 59 53.5 C63 56.5 63 60.5 58.5 62.5 C43.5 69.5 27.5 67.5 20 62.5 C18 61.2 18.2 60.5 19.5 59.5 Z"/>
+    <path d="M27 72.5 C40 67 57 64 67.5 57.5 C71.5 61.5 70 67.5 63.5 71.5 C51 79 36.5 78.5 28 74.5 C26 73.6 25.8 73 27 72.5 Z"/>
+  </g></svg>`;
+}
+
+/* ---------- スプラッシュ ---------- */
+function showSplash(){
+  const s=document.getElementById('splash');
+  s.innerHTML=logoSVG(true)+`<div class="sp-name">きん肉こまつ</div><div class="sp-tag">PERSONAL TRAINING</div>`;
+  setTimeout(()=>s.classList.add('bye'),2150);
+  setTimeout(()=>s.remove(),2800);
+}
+
+/* ---------- 初期化 ---------- */
+async function init(){
+  showSplash();
+  document.getElementById('authLogo').innerHTML=logoSVG(false)+`<div class="big">きん肉こまつ</div><div class="tag">PERSONAL TRAINING</div>`;
+  document.getElementById('hdrLogo').innerHTML=logoSVG(false)+`<span class="big">きん肉こまつ</span><span class="tag" id="roleTag">MEMBER</span>`;
+  if(DEMO){ startDemo(); return; }
+  if(SUPABASE_URL.startsWith("ここに")){
+    document.getElementById('authMsg').className='msg err show';
+    document.getElementById('authMsg').textContent='Supabaseの設定が未入力です。コード上部のSUPABASE_URLとSUPABASE_ANONを設定してください。';
+    return;
+  }
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  const { data:{ session } } = await sb.auth.getSession();
+  if(session){ await afterLogin(); }
+}
+window.addEventListener('DOMContentLoaded', init);
+
+/* ============================================================
+   デモモード（DEMO=true のとき）
+   ============================================================ */
+const today=new Date();
+function dstr(offset){const d=new Date(today);let added=0;while(true){if(!SETTINGS.weekdaysOnly||((d.getDay()>=1)&&(d.getDay()<=5))){if(added===offset)break;added++;}d.setDate(d.getDate()+1);}return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+let DB;
+function seedDB(){
+  DB={
+    profiles:[
+      {id:'admin1',name:'小松トレーナー',role:'admin',tickets:0,created_at:'2025-01-01'},
+      {id:'u1',name:'山本 蓮',role:'member',tickets:8,created_at:'2025-02-01'},
+      {id:'u2',name:'田中 翔',role:'member',tickets:3,created_at:'2025-02-10'},
+      {id:'u3',name:'佐藤 美咲',role:'member',tickets:12,created_at:'2025-03-01'},
+    ],
+    groups:[{id:'g1',name:'朝トレ仲間',invite_code:'ASA123',owner_id:'u1'}],
+    group_members:[{id:'gm1',group_id:'g1',user_id:'u1'},{id:'gm2',group_id:'g1',user_id:'u2'}],
+    reservations:[
+      {id:'r1',user_id:'u1',date:dstr(0),hour:10,target:'胸・肩 / 重量上げたい',group_id:'g1',status:'booked',created_at:'2025-06-01'},
+      {id:'r2',user_id:'u3',date:dstr(0),hour:14,target:'脚',group_id:null,status:'booked',created_at:'2025-06-01'},
+      {id:'r3',user_id:'u2',date:dstr(1),hour:11,target:'背中・腕',group_id:null,status:'booked',created_at:'2025-06-01'},
+    ],
+    reservation_participants:[{id:'rp1',reservation_id:'r1',user_id:'u2',target:'腕'}],
+    ticket_history:[
+      {id:'th1',user_id:'u1',delta:10,memo:'回数券 10枚（現金）',by_admin:true,created_at:'2025-05-01'},
+      {id:'th2',user_id:'u1',delta:-1,memo:'予約',by_admin:false,created_at:'2025-06-01'},
+      {id:'th3',user_id:'u1',delta:-1,memo:'予約',by_admin:false,created_at:'2025-06-02'},
+    ],
+    intake_sheets:[
+      {user_id:'u1',furigana:'ヤマモト レン',birth:'1990-05-12',gender:'男性',height:'172',weight:'68',phone:'090-1234-5678',address:'大阪府堺市〇〇区1-2-3',job:'営業',discovery:'ご紹介',discovery_detail:'田中さん',experience:'継続中',experience_detail:'週2回、自重とダンベル中心',goals:'ボディメイク、筋力向上',parts:'胸、肩、腕（二の腕）'},
+      {user_id:'u2',furigana:'タナカ ショウ',birth:'',gender:'男性',height:'',weight:'',phone:'',address:'',job:'会社員',discovery:'SNS',discovery_detail:'',experience:'初めて',experience_detail:'健康診断で運動不足を指摘されたため',goals:'ダイエット、体力づくり',parts:'全身、ウエスト'},
+      {user_id:'u3',furigana:'サトウ ミサキ',birth:'1995-11-02',gender:'女性',height:'160',weight:'52',phone:'080-9876-5432',address:'大阪府堺市△△区4-5-6',job:'看護師',discovery:'前を通りかかって',discovery_detail:'',experience:'過去にやっていた',experience_detail:'仕事が忙しくなり退会した',goals:'ボディメイク',parts:'お尻、ふともも、ウエスト'},
+    ],
+    settings:[{id:1,open_hour:10,close_hour:21,weekdays_only:true,max_party:3}],
+  };
+}
+let _idc=100;
+function newId(){return 'x'+(_idc++);}
+
+function makeMockSb(){
+  function hydrate(table,row){
+    const r={...row};
+    if(table==='reservations'){
+      r.profiles=DB.profiles.find(p=>p.id===r.user_id)||null;
+      r.reservation_participants=DB.reservation_participants
+        .filter(p=>p.reservation_id===r.id)
+        .map(p=>({...p,profiles:DB.profiles.find(x=>x.id===p.user_id)}));
+    }
+    if(table==='reservation_participants'){
+      r.profiles=DB.profiles.find(p=>p.id===r.user_id)||null;
+      r.reservations=DB.reservations.find(x=>x.id===r.reservation_id)||null;
+      if(r.reservations){r.reservations={...r.reservations,profiles:DB.profiles.find(p=>p.id===r.reservations.user_id)};}
+    }
+    if(table==='group_members'){
+      r.groups=DB.groups.find(g=>g.id===r.group_id)||null;
+      r.profiles=DB.profiles.find(p=>p.id===r.user_id)||null;
+    }
+    return r;
+  }
+  function query(table){
+    const filters=[];
+    const api={
+      _limit:null,
+      select(){return api;},
+      eq(col,val){filters.push(r=>r[col]===val);return api;},
+      gte(col,val){filters.push(r=>r[col]>=val);return api;},
+      order(){return api;},
+      limit(n){api._limit=n;return api;},
+      _run(){
+        let out=(DB[table]||[]).filter(r=>filters.every(f=>f(r))).map(r=>hydrate(table,r));
+        if(api._limit)out=out.slice(0,api._limit);
+        return out;
+      },
+      single(){return Promise.resolve({data:api._run()[0]||null,error:null});},
+      maybeSingle(){return api.single();},
+      then(res){res({data:api._run(),error:null});},
+      insert(payload){
+        const arr=Array.isArray(payload)?payload:[payload];
+        const created=arr.map(p=>{const row={id:newId(),...p};(DB[table]=DB[table]||[]).push(row);return row;});
+        return {data:created,error:null,select:()=>({single:()=>Promise.resolve({data:created[0],error:null})}),then:(res)=>res({data:created,error:null})};
+      },
+      update(patch){
+        return {eq:(col,val)=>{(DB[table]||[]).forEach(r=>{if(r[col]===val)Object.assign(r,patch);});return Promise.resolve({data:null,error:null});}};
+      },
+      upsert(payload){
+        const arr=Array.isArray(payload)?payload:[payload];
+        arr.forEach(p=>{
+          const key=('id' in p)?'id':('user_id' in p)?'user_id':null;
+          const ex=key?(DB[table]||[]).find(r=>r[key]===p[key]):null;
+          if(ex)Object.assign(ex,p);else (DB[table]=DB[table]||[]).push(p);
+        });
+        return {data:arr,error:null,then:(res)=>res({data:arr,error:null})};
+      },
+      delete(){
+        return {eq:(col,val)=>{
+          const second={
+            eq:(c2,v2)=>{DB[table]=DB[table].filter(r=>!(r[col]===val&&r[c2]===v2));return Promise.resolve({error:null});},
+            then:(res)=>{DB[table]=DB[table].filter(r=>r[col]!==val);res({error:null});}
+          };
+          return second;
+        }};
+      },
+    };
+    return api;
+  }
+  return {
+    from:(t)=>query(t),
+    auth:{ getUser:async()=>({data:{user:me}}), signOut:async()=>{seedDB();return {};} },
+  };
+}
+
+let demoN=1;
+function startDemo(){
+  seedDB();
+  sb=makeMockSb();
+  const bar=document.createElement('div');
+  bar.id='demoBar';
+  bar.style.cssText='position:fixed;top:0;left:0;right:0;z-index:500;background:#facc15;color:#0a0a0a;font-size:12px;font-weight:700;padding:6px 8px;display:flex;align-items:center;justify-content:center;gap:6px;border-bottom:2px solid #0a0a0a;flex-wrap:wrap';
+  bar.innerHTML=`🧪 デモ:
+    <button id="asMember">会員(山本)</button>
+    <button id="asAdmin">トレーナー</button>
+    <button id="asNew">✨新規登録を体験</button>`;
+  document.body.appendChild(bar);
+  document.body.style.paddingTop='36px';
+  document.getElementById('asMember').onclick=()=>demoLogin('u1');
+  document.getElementById('asAdmin').onclick=()=>demoLogin('admin1');
+  document.getElementById('asNew').onclick=demoSignup;
+  demoLogin('u1');
+}
+function demoBtnStyle(uid){
+  ['asMember','asAdmin','asNew'].forEach((bid,i)=>{
+    const el=document.getElementById(bid);if(!el)return;
+    const base='padding:4px 10px;border-radius:6px;font-weight:700;cursor:pointer;font-size:12px;';
+    const on='background:#0a0a0a;color:#fff;border:none;',off='background:#fff;color:#0a0a0a;border:1.5px solid #0a0a0a;';
+    const active=(bid==='asMember'&&uid==='u1')||(bid==='asAdmin'&&uid==='admin1');
+    el.style.cssText=base+(active?on:off);
+  });
+}
+function demoLogin(uid){
+  me={id:uid};
+  profile={...DB.profiles.find(p=>p.id===uid)};
+  document.getElementById('authView').classList.add('hide');
+  document.getElementById('appView').classList.remove('hide');
+  document.getElementById('whoName').textContent=profile.name;
+  document.getElementById('roleTag').textContent=profile.role==='admin'?'TRAINER':'MEMBER';
+  curTab='reserve';selDate=null;
+  buildTabs();render();
+  demoBtnStyle(uid);
+}
+function demoSignup(){
+  const id='new'+(demoN++);
+  DB.profiles.push({id,name:'新規 太郎',role:'member',tickets:0,created_at:''});
+  demoLogin(id);
+  startWizard(emptyIntake(),async d=>{
+    await sb.from('intake_sheets').upsert(intakeToRow(d,id));
+  });
+}
+
+/* ---------- 認証UI ---------- */
+function setAuthMode(m){
+  authMode=m;
+  const isS=m==='signup';
+  document.getElementById('segLogin').classList.toggle('on',!isS);
+  document.getElementById('segSignup').classList.toggle('on',isS);
+  document.getElementById('nameFld').classList.toggle('hide',!isS);
+  document.getElementById('authBtn').textContent=isS?'登録する':'ログイン';
+  document.getElementById('switchTxt').textContent=isS?'すでにアカウントをお持ちの方は ':'アカウントをお持ちでない方は ';
+  document.getElementById('switchLink').textContent=isS?'ログイン':'新規登録';
+  document.getElementById('switchLink').onclick=()=>setAuthMode(isS?'login':'signup');
+  authMsg('','');
+}
+function authMsg(t,k){const e=document.getElementById('authMsg');e.textContent=t;e.className='msg '+(t?('show '+k):'');}
+
+async function doAuth(){
+  const email=document.getElementById('auEmail').value.trim();
+  const pass=document.getElementById('auPass').value;
+  if(!email||!pass){authMsg('メールとパスワードを入力してください','err');return;}
+  document.getElementById('authBtn').disabled=true;
+  try{
+    if(authMode==='signup'){
+      const name=document.getElementById('auName').value.trim();
+      if(!name){authMsg('お名前を入力してください','err');return;}
+      const { data, error } = await sb.auth.signUp({email,password:pass});
+      if(error) throw error;
+      /* 最初に登録した1人目は自動でトレーナー（管理者）になる */
+      const { data:existing } = await sb.from('profiles').select('id').limit(1);
+      const isFirst=!existing||existing.length===0;
+      await sb.from('profiles').insert({ id:data.user.id, name, role:isFirst?'admin':'member', tickets:0 });
+      const { error:e2 } = await sb.auth.signInWithPassword({email,password:pass});
+      if(e2){authMsg('登録完了。確認メールのリンクを開いてからログインしてください。','ok');return;}
+      await afterLogin();
+      if(!isFirst){
+        startWizard(emptyIntake(),async d=>{
+          await sb.from('intake_sheets').upsert(intakeToRow(d,me.id));
+        });
+      }
+    }else{
+      const { error } = await sb.auth.signInWithPassword({email,password:pass});
+      if(error) throw error;
+      await afterLogin();
+    }
+  }catch(err){
+    authMsg(translateErr(err.message),'err');
+  }finally{
+    document.getElementById('authBtn').disabled=false;
+  }
+}
+function translateErr(m){
+  if(/Invalid login/i.test(m))return'メールまたはパスワードが違います';
+  if(/already registered/i.test(m))return'このメールは既に登録されています';
+  if(/at least 6/i.test(m))return'パスワードは6文字以上にしてください';
+  return m;
+}
+
+async function afterLogin(){
+  const { data:{ user } } = await sb.auth.getUser();
+  me=user;
+  let { data:p } = await sb.from('profiles').select('*').eq('id',user.id).maybeSingle();
+  if(!p){
+    await sb.from('profiles').insert({id:user.id,name:user.email.split('@')[0],role:'member',tickets:0});
+    p=(await sb.from('profiles').select('*').eq('id',user.id).single()).data;
+  }
+  profile=p;
+  await loadSettings();
+  document.getElementById('authView').classList.add('hide');
+  document.getElementById('appView').classList.remove('hide');
+  document.getElementById('whoName').textContent=profile.name;
+  document.getElementById('roleTag').textContent=profile.role==='admin'?'TRAINER':'MEMBER';
+  curTab='reserve';
+  buildTabs();
+  render();
+}
+async function logout(){ await sb.auth.signOut(); location.reload(); }
+
+async function loadSettings(){
+  const { data } = await sb.from('settings').select('*').eq('id',1).maybeSingle();
+  if(data){ SETTINGS={openHour:data.open_hour,closeHour:data.close_hour,weekdaysOnly:data.weekdays_only,maxParty:data.max_party}; }
+}
+
+/* ---------- タブ ---------- */
+function buildTabs(){
+  const isAdmin=profile.role==='admin';
+  const tabs = isAdmin
+    ? [['reserve','予約状況','📅'],['tickets','チケット','🎫'],['members','会員','👥'],['settings','設定','⚙️']]
+    : [['reserve','予約','📅'],['mine','マイ予約','📋'],['group','グループ','👥'],['me','マイページ','🙂']];
+  const nav=document.getElementById('tabs');
+  nav.innerHTML='';
+  tabs.forEach(([k,label,ic])=>{
+    const b=document.createElement('button');
+    b.className=(k===curTab?'on':'');
+    b.innerHTML=`<span class="ic">${ic}</span>${label}`;
+    b.onclick=()=>{curTab=k;buildTabs();render();};
+    nav.appendChild(b);
+  });
+}
+
+/* ---------- ルーター ---------- */
+function render(){
+  const isAdmin=profile.role==='admin';
+  const s=document.getElementById('screen');
+  s.innerHTML='<div class="loader">読み込み中…</div>';
+  if(isAdmin){
+    if(curTab==='reserve')return adminReserveView();
+    if(curTab==='tickets')return adminTicketsView();
+    if(curTab==='members')return adminMembersView();
+    if(curTab==='settings')return adminSettingsView();
+  }else{
+    if(curTab==='reserve')return memberReserveView();
+    if(curTab==='mine')return memberMineView();
+    if(curTab==='group')return memberGroupView();
+    if(curTab==='me')return memberMeView();
+  }
+}
+
+/* ---------- 日付ユーティリティ ---------- */
+const DOW=['日','月','火','水','木','金','土'];
+function fmtDate(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+function isWeekday(d){const w=d.getDay();return w>=1&&w<=5;}
+function nextDays(n){
+  const out=[];const d=new Date();d.setHours(0,0,0,0);
+  while(out.length<n){
+    if(!SETTINGS.weekdaysOnly||isWeekday(d))out.push(new Date(d));
+    d.setDate(d.getDate()+1);
+  }
+  return out;
+}
+function slotHours(){const a=[];for(let h=SETTINGS.openHour;h<SETTINGS.closeHour;h++)a.push(h);return a;}
+function jdate(ds){const [y,m,dd]=ds.split('-');const d=new Date(+y,+m-1,+dd);return `${+m}/${+dd}(${DOW[d.getDay()]})`;}
+
+/* ======================================================
+   会員：予約画面
+   ====================================================== */
+async function memberReserveView(){
+  const days=nextDays(10);
+  if(!selDate)selDate=fmtDate(days[0]);
+  const myGroups=await getMyGroupIds();
+  const { data:resv } = await sb.from('reservations')
+    .select('*, reservation_participants(user_id), profiles(name)')
+    .eq('date',selDate);
+  const byHour={};(resv||[]).forEach(r=>byHour[r.hour]=r);
+
+  /* 次回予約（あいさつ用） */
+  const todayS=fmtDate(new Date());
+  const { data:own } = await sb.from('reservations').select('*').eq('user_id',me.id).gte('date',todayS);
+  const { data:joined } = await sb.from('reservation_participants').select('reservations(*)').eq('user_id',me.id);
+  const future=[...(own||[]),...((joined||[]).map(j=>j.reservations).filter(r=>r&&r.date>=todayS))]
+    .sort((a,b)=>a.date===b.date?a.hour-b.hour:(a.date<b.date?-1:1));
+  const nx=future[0];
+  const firstName=profile.name.split(/\s| /)[0];
+
+  let html=`
+    <div class="hello">こんにちは、${firstName}さん
+      <span class="nx">${nx?`次回：${jdate(nx.date)} ${nx.hour}:00${nx.target?' / '+nx.target:''}`:'次回のご予約はまだありません'}</span>
+    </div>
+    <div class="ticket-banner">${logoSVG(false)}
+      <div><div class="lbl">チケット残数</div><div class="num">${profile.tickets}<span style="font-size:16px;font-weight:700">枚</span></div></div>
+      <div style="text-align:right"><div class="lbl">1回の予約で</div><div style="font-size:15px;font-weight:700">1枚消費</div></div>
+    </div>
+    ${profile.tickets<1?`<div class="card" style="background:var(--smoke)"><div style="font-weight:700;margin-bottom:4px">🎫 来店時にチケットのご購入をお願いします</div><div class="small">チケットが0枚のため予約できません。回数券は店頭で現金購入後、トレーナーが追加します。</div></div>`:''}
+    <div class="card">
+      <h2>日付を選ぶ</h2>
+      <div class="daybar">`;
+  days.forEach(d=>{
+    const ds=fmtDate(d);
+    html+=`<button class="${ds===selDate?'on':''}" onclick="selDate='${ds}';render()">
+      <div class="dow">${DOW[d.getDay()]}</div><div class="dnum">${d.getDate()}</div></button>`;
+  });
+  html+=`</div>
+    <h2 style="margin-top:6px">時間を選ぶ</h2>
+    <div class="slots">`;
+  slotHours().forEach(h=>{
+    const r=byHour[h];
+    if(!r){
+      html+=`<div class="slot open" onclick="openReserve('${selDate}',${h})">
+        <div class="t">${h}:00</div><div class="s">空き</div></div>`;
+    }else{
+      const parts=(r.reservation_participants||[]).map(p=>p.user_id);
+      const allUsers=[r.user_id,...parts];
+      const iAmIn=allUsers.includes(me.id);
+      const cnt=allUsers.length;
+      const full=cnt>=SETTINGS.maxParty;
+      const sameGroup=r.group_id && myGroups.includes(r.group_id);
+      if(iAmIn){
+        html+=`<div class="slot mine"><div class="t">${h}:00</div><div class="s">予約済み ✓</div></div>`;
+      }else if(sameGroup && !full){
+        html+=`<div class="slot joinable" onclick="openJoin('${r.id}',${h})">
+          <div class="t">${h}:00</div><div class="s">参加可 ${cnt}/${SETTINGS.maxParty}</div></div>`;
+      }else{
+        html+=`<div class="slot taken"><div class="t">${h}:00</div><div class="s">${full?'満員':'予約あり'}</div></div>`;
+      }
+    }
+  });
+  html+=`</div></div>
+    <p class="small">点線枠＝あなたのグループ仲間の予約。タップで相乗り参加できます（最大${SETTINGS.maxParty}名）。</p>`;
+  document.getElementById('screen').innerHTML=html;
+}
+
+async function getMyGroupIds(){
+  const { data } = await sb.from('group_members').select('group_id').eq('user_id',me.id);
+  return (data||[]).map(g=>g.group_id);
+}
+
+/* 予約シート（新規） */
+async function openReserve(date,hour){
+  if(profile.tickets<1){ showTicketShortage(); return; }
+  const myGroups=await sb.from('group_members')
+    .select('group_id, groups(name)').eq('user_id',me.id);
+  let gopt='<option value="">（グループなし・1人で予約）</option>';
+  (myGroups.data||[]).forEach(g=>gopt+=`<option value="${g.group_id}">${g.groups.name}</option>`);
+  document.getElementById('ovBody').innerHTML=`
+    <h3>予約する</h3>
+    <div class="sub">${jdate(date)}　${hour}:00〜　チケット1枚消費</div>
+    <label class="fld">次に鍛えたい部位（任意）</label>
+    <div class="chips" id="bodyChips"></div>
+    <textarea id="rvNote" placeholder="例：胸と肩を重点的に。前回より重量上げたい等"></textarea>
+    <label class="fld">グループ（仲間が相乗り参加できるようになります）</label>
+    <select id="rvGroup">${gopt}</select>
+    <div style="height:18px"></div>
+    <button class="btn" onclick="submitReserve('${date}',${hour})">この内容で予約する</button>`;
+  renderBodyChips();
+  openOv();
+}
+let pickedParts=[];
+function renderBodyChips(){
+  const parts=['胸','背中','肩','腕','脚','腹','尻','全身'];
+  pickedParts=[];
+  document.getElementById('bodyChips').innerHTML=parts.map(p=>
+    `<span class="chip" data-p="${p}" onclick="togglePart(this)">${p}</span>`).join('');
+}
+function togglePart(el){
+  const p=el.dataset.p;
+  if(pickedParts.includes(p)){pickedParts=pickedParts.filter(x=>x!==p);el.classList.remove('sel');}
+  else{pickedParts.push(p);el.classList.add('sel');}
+}
+async function submitReserve(date,hour){
+  const note=document.getElementById('rvNote').value.trim();
+  const target=[pickedParts.join('・'),note].filter(Boolean).join(' / ');
+  const groupId=document.getElementById('rvGroup').value||null;
+  const { data:ex } = await sb.from('reservations').select('id').eq('date',date).eq('hour',hour);
+  if(ex&&ex.length){toast('この枠は埋まりました');closeOv();render();return;}
+  const { error } = await sb.from('reservations').insert({
+    user_id:me.id,date,hour,target,group_id:groupId,status:'booked'
+  });
+  if(error){toast('エラー: '+error.message);return;}
+  await consumeTicket(me.id,1,`予約 ${date} ${hour}:00`);
+  toast('予約しました 💪');
+  closeOv();
+  profile.tickets-=1;
+  render();
+}
+
+/* 相乗り参加 */
+async function openJoin(resId,hour){
+  if(profile.tickets<1){ showTicketShortage(); return; }
+  const { data:r } = await sb.from('reservations')
+    .select('*, profiles(name)').eq('id',resId).single();
+  document.getElementById('ovBody').innerHTML=`
+    <h3>仲間の予約に参加</h3>
+    <div class="sub">${jdate(r.date)}　${r.hour}:00〜　予約者：${r.profiles.name}<br>チケット1枚消費</div>
+    <label class="fld">あなたが鍛えたい部位（任意）</label>
+    <div class="chips" id="bodyChips"></div>
+    <textarea id="rvNote" placeholder="任意"></textarea>
+    <div style="height:18px"></div>
+    <button class="btn" onclick="submitJoin('${resId}')">この枠に参加する</button>`;
+  renderBodyChips();
+  openOv();
+}
+async function submitJoin(resId){
+  const { data:r } = await sb.from('reservations').select('user_id, reservation_participants(user_id)').eq('id',resId).single();
+  const cnt=1+(r.reservation_participants||[]).length;
+  if(cnt>=SETTINGS.maxParty){toast('満員になりました');closeOv();render();return;}
+  const note=document.getElementById('rvNote').value.trim();
+  const target=[pickedParts.join('・'),note].filter(Boolean).join(' / ');
+  const { error } = await sb.from('reservation_participants').insert({
+    reservation_id:resId,user_id:me.id,target
+  });
+  if(error){toast('エラー: '+error.message);return;}
+  await consumeTicket(me.id,1,`相乗り参加`);
+  toast('参加しました 💪');
+  closeOv();profile.tickets-=1;render();
+}
+
+async function consumeTicket(uid,n,memo){
+  const { data:p } = await sb.from('profiles').select('tickets').eq('id',uid).single();
+  await sb.from('profiles').update({tickets:p.tickets-n}).eq('id',uid);
+  await sb.from('ticket_history').insert({user_id:uid,delta:-n,memo,by_admin:false});
+}
+
+/* チケット不足の案内 */
+function showTicketShortage(){
+  document.getElementById('ovBody').innerHTML=`
+    <h3>チケットが不足しています</h3>
+    <div class="sub">現在の残数：${profile.tickets}枚</div>
+    <div style="border:1.5px solid var(--ink);border-radius:12px;padding:16px;margin:8px 0 18px;background:var(--smoke)">
+      <div style="font-weight:700;margin-bottom:6px">🎫 来店時にチケットのご購入をお願いします</div>
+      <div class="small">予約には1枚以上のチケットが必要です。回数券は店頭で現金でご購入いただけます。お支払い後、トレーナーがチケットを追加します。</div>
+    </div>
+    <button class="btn" onclick="closeOv()">閉じる</button>`;
+  openOv();
+}
+
+/* ======================================================
+   会員：マイ予約
+   ====================================================== */
+async function memberMineView(){
+  const todayS=fmtDate(new Date());
+  const { data:owned } = await sb.from('reservations')
+    .select('*, reservation_participants(user_id, target, profiles(name))')
+    .eq('user_id',me.id).gte('date',todayS).order('date').order('hour');
+  const { data:joined } = await sb.from('reservation_participants')
+    .select('target, reservations(*, profiles(name))')
+    .eq('user_id',me.id);
+  const joinedFuture=(joined||[]).filter(j=>j.reservations && j.reservations.date>=todayS);
+
+  let html=`<div class="card"><h2>これからの予約</h2>`;
+  if((!owned||!owned.length)&&!joinedFuture.length){
+    html+=`<div class="empty">予約はまだありません。<br>「予約」タブから取りましょう。</div>`;
+  }
+  (owned||[]).forEach(r=>{
+    const others=(r.reservation_participants||[]).map(p=>p.profiles.name);
+    html+=`<div class="row">
+      <div><div class="ttl">${jdate(r.date)} ${r.hour}:00 <span class="pill fill">予約者</span></div>
+        <div class="meta">${r.target||'部位指定なし'}${others.length?'　+'+others.join('・'):''}</div></div>
+      <button class="btn sm danger row" onclick="cancelReserve('${r.id}')">取消</button></div>`;
+  });
+  joinedFuture.forEach(j=>{
+    const r=j.reservations;
+    html+=`<div class="row">
+      <div><div class="ttl">${jdate(r.date)} ${r.hour}:00 <span class="pill">参加</span></div>
+        <div class="meta">${r.profiles.name}さんの枠 / ${j.target||'部位指定なし'}</div></div>
+      <button class="btn sm ghost row" onclick="cancelJoin('${r.id}')">参加取消</button></div>`;
+  });
+  html+=`</div>`;
+  document.getElementById('screen').innerHTML=html;
+}
+async function cancelReserve(id){
+  if(!confirm('予約を取り消します。よろしいですか？\n（チケットは返却されます）'))return;
+  const { data:parts } = await sb.from('reservation_participants').select('user_id').eq('reservation_id',id);
+  for(const p of (parts||[])) await refundTicket(p.user_id,1,'予約取消に伴う返却');
+  await sb.from('reservation_participants').delete().eq('reservation_id',id);
+  await sb.from('reservations').delete().eq('id',id);
+  await refundTicket(me.id,1,'予約取消');
+  profile.tickets+=1;
+  toast('取り消しました');render();
+}
+async function cancelJoin(resId){
+  if(!confirm('参加を取り消します。チケットは返却されます。'))return;
+  await sb.from('reservation_participants').delete().eq('reservation_id',resId).eq('user_id',me.id);
+  await refundTicket(me.id,1,'参加取消');
+  profile.tickets+=1;toast('取り消しました');render();
+}
+async function refundTicket(uid,n,memo){
+  const { data:p } = await sb.from('profiles').select('tickets').eq('id',uid).single();
+  await sb.from('profiles').update({tickets:p.tickets+n}).eq('id',uid);
+  await sb.from('ticket_history').insert({user_id:uid,delta:n,memo,by_admin:false});
+}
+
+/* ======================================================
+   会員：グループ
+   ====================================================== */
+async function memberGroupView(){
+  const { data:mygroups } = await sb.from('group_members')
+    .select('group_id, groups(id,name,invite_code)').eq('user_id',me.id);
+  let html=`<div class="card"><h2>参加中のグループ</h2>`;
+  if(!mygroups||!mygroups.length){
+    html+=`<div class="empty">グループに入っていません。</div>`;
+  }else{
+    for(const g of mygroups){
+      const { data:mem } = await sb.from('group_members')
+        .select('profiles(name)').eq('group_id',g.group_id);
+      html+=`<div class="row"><div>
+        <div class="ttl">${g.groups.name}</div>
+        <div class="meta">招待コード: <b>${g.groups.invite_code}</b>　${(mem||[]).length}名</div>
+        <div class="chips">${(mem||[]).map(m=>`<span class="chip" style="cursor:default">${m.profiles.name}</span>`).join('')}</div>
+        </div></div>`;
+    }
+  }
+  html+=`</div>
+    <div class="card"><h2>グループを作る</h2>
+      <label class="fld">グループ名</label>
+      <input id="gName" placeholder="例：朝トレ仲間">
+      <div style="height:12px"></div>
+      <button class="btn" onclick="createGroup()">作成する</button>
+    </div>
+    <div class="card"><h2>招待コードで参加</h2>
+      <label class="fld">招待コード</label>
+      <input id="gCode" placeholder="6桁のコード" style="text-transform:uppercase">
+      <div style="height:12px"></div>
+      <button class="btn ghost" onclick="joinGroup()">参加する</button>
+    </div>`;
+  document.getElementById('screen').innerHTML=html;
+}
+function genCode(){return Math.random().toString(36).slice(2,8).toUpperCase();}
+async function createGroup(){
+  const name=document.getElementById('gName').value.trim();
+  if(!name){toast('グループ名を入力してください');return;}
+  const code=genCode();
+  const { data:g, error } = await sb.from('groups').insert({name,invite_code:code,owner_id:me.id}).select().single();
+  if(error){toast('エラー: '+error.message);return;}
+  await sb.from('group_members').insert({group_id:g.id,user_id:me.id});
+  toast('グループを作成しました');render();
+}
+async function joinGroup(){
+  const code=document.getElementById('gCode').value.trim().toUpperCase();
+  if(!code){toast('招待コードを入力してください');return;}
+  const { data:g } = await sb.from('groups').select('id').eq('invite_code',code).maybeSingle();
+  if(!g){toast('そのコードのグループが見つかりません');return;}
+  const { data:ex } = await sb.from('group_members').select('id').eq('group_id',g.id).eq('user_id',me.id);
+  if(ex&&ex.length){toast('すでに参加しています');return;}
+  await sb.from('group_members').insert({group_id:g.id,user_id:me.id});
+  toast('グループに参加しました');render();
+}
+
+/* ======================================================
+   ヒアリングシート（共通）
+   ====================================================== */
+const GOALS=['ダイエット','ボディメイク','体力づくり','筋力向上','ボディメイク大会出場'];
+const PARTS_W=['全身','肩','胸','ウエスト','お尻','ふともも','背中','腕（二の腕）','上半身','下半身'];
+const DISCOVERY=['前を通りかかって','ご紹介','SNS','その他'];
+const EXPS=['初めて','過去にやっていた','継続中'];
+const EXP_Q={'初めて':'トレーニングを始めようと思った理由を教えてください','過去にやっていた':'トレーニングを辞めた理由を教えてください','継続中':'今、どんなトレーニングをしていますか？'};
+const SHEET_FIELDS=[['furigana','フリガナ'],['birth','生年月日'],['gender','性別'],['height','身長(cm)'],['weight','体重(kg)'],['phone','電話番号'],['address','ご住所'],['job','ご職業'],['discovery','きっかけ'],['discovery_detail','きっかけ詳細'],['experience','トレ経験'],['experience_detail','経験の詳細'],['goals','目的'],['parts','強化したい部位']];
+
+function emptyIntake(){return {furigana:'',birth:'',gender:'',height:'',weight:'',phone:'',address:'',job:'',discovery:'',discovery_detail:'',experience:'',experience_detail:'',goals:[],goals_other:'',parts:[],parts_other:''};}
+function intakeToRow(d,uid){
+  return {user_id:uid,furigana:d.furigana,birth:d.birth,gender:d.gender,height:String(d.height||''),weight:String(d.weight||''),
+    phone:d.phone,address:d.address,job:d.job,discovery:d.discovery,discovery_detail:d.discovery_detail,
+    experience:d.experience,experience_detail:d.experience_detail,
+    goals:[...d.goals,...(d.goals_other?[d.goals_other]:[])].join('、'),
+    parts:[...d.parts,...(d.parts_other?[d.parts_other]:[])].join('、')};
+}
+function rowToIntake(r){
+  const d=emptyIntake();if(!r)return d;
+  ['furigana','birth','gender','height','weight','phone','address','job','discovery','discovery_detail','experience','experience_detail'].forEach(k=>d[k]=r[k]||'');
+  (r.goals||'').split('、').filter(Boolean).forEach(v=>{if(GOALS.includes(v))d.goals.push(v);else d.goals_other=d.goals_other?d.goals_other+'、'+v:v;});
+  (r.parts||'').split('、').filter(Boolean).forEach(v=>{if(PARTS_W.includes(v))d.parts.push(v);else d.parts_other=d.parts_other?d.parts_other+'、'+v:v;});
+  return d;
+}
+
+/* ---------- ウィザード ---------- */
+let wiz={step:0,data:null,onDone:null};
+function startWizard(prefill,onDone){
+  wiz={step:0,data:prefill||emptyIntake(),onDone};
+  document.getElementById('wiz').classList.add('show');
+  wizRender();
+}
+function wizChip(group,val,multi){
+  const sel=multi?wiz.data[group].includes(val):wiz.data[group]===val;
+  return `<span class="chip ${sel?'sel':''}" onclick="${multi?'wizToggle':'wizPick'}('${group}','${val}',this)">${val}</span>`;
+}
+function wizPick(group,val,el){
+  wiz.data[group]=wiz.data[group]===val?'':val;
+  if(group==='experience'){wizRender();return;}
+  if(group==='discovery'){wizRender();return;}
+  [...el.parentElement.children].forEach(c=>c.classList.remove('sel'));
+  if(wiz.data[group])el.classList.add('sel');
+}
+function wizToggle(group,val,el){
+  if(wiz.data[group].includes(val)){wiz.data[group]=wiz.data[group].filter(x=>x!==val);el.classList.remove('sel');}
+  else{wiz.data[group].push(val);el.classList.add('sel');}
+}
+function wizCollect(){
+  const g=id=>{const e=document.getElementById(id);return e?e.value.trim():null;};
+  const map={wz_furigana:'furigana',wz_birth:'birth',wz_height:'height',wz_weight:'weight',wz_phone:'phone',wz_address:'address',wz_job:'job',wz_disc_detail:'discovery_detail',wz_exp_detail:'experience_detail',wz_goals_other:'goals_other',wz_parts_other:'parts_other'};
+  Object.entries(map).forEach(([id,key])=>{const v=g(id);if(v!==null)wiz.data[key]=v;});
+}
+function wizRender(){
+  const d=wiz.data;
+  const total=6;
+  document.getElementById('wizStep').textContent=(Math.min(wiz.step,5)+1)+'/'+total;
+  document.getElementById('wizProg').style.width=((Math.min(wiz.step,5)+1)/total*100)+'%';
+  document.querySelector('.wiz-top').style.display=wiz.step>=6?'none':'flex';
+  const body=document.getElementById('wizBody');
+  const foot=document.getElementById('wizFoot');
+  let h='';
+  if(wiz.step===0){
+    h=`<h3>はじめまして！</h3><div class="lead">あなたに合ったトレーニングのために、少しだけ教えてください。差し支えのない範囲でOKです。</div>
+    <label class="fld">フリガナ</label><input id="wz_furigana" value="${d.furigana}" placeholder="ヤマモト レン">
+    <label class="fld">生年月日</label><input id="wz_birth" type="date" value="${d.birth}">
+    <label class="fld">性別</label><div class="bigchips">${['女性','男性','回答しない'].map(v=>wizChip('gender',v,false)).join('')}</div>
+    <div class="grid2">
+      <div><label class="fld">身長（cm）</label><input id="wz_height" type="number" inputmode="decimal" value="${d.height}" placeholder="170"></div>
+      <div><label class="fld">体重（kg）</label><input id="wz_weight" type="number" inputmode="decimal" value="${d.weight}" placeholder="65"></div>
+    </div>`;
+  }else if(wiz.step===1){
+    h=`<h3>連絡先</h3><div class="lead">ご連絡やご案内の際に使用します。</div>
+    <label class="fld">電話番号</label><input id="wz_phone" type="tel" value="${d.phone}" placeholder="090-1234-5678">
+    <label class="fld">ご住所</label><input id="wz_address" value="${d.address}" placeholder="大阪府堺市…">
+    <label class="fld">ご職業</label><input id="wz_job" value="${d.job}" placeholder="例：会社員">`;
+  }else if(wiz.step===2){
+    h=`<h3>当店を知ったきっかけ</h3><div class="lead">どこで「きん肉こまつ」を知りましたか？</div>
+    <div class="bigchips">${DISCOVERY.map(v=>wizChip('discovery',v,false)).join('')}</div>
+    ${d.discovery==='ご紹介'?`<label class="fld">ご紹介者のお名前</label><input id="wz_disc_detail" value="${d.discovery_detail}" placeholder="紹介してくれた方">`:''}
+    ${d.discovery==='その他'?`<label class="fld">詳しく（任意）</label><input id="wz_disc_detail" value="${d.discovery_detail}" placeholder="例：チラシを見て">`:''}`;
+  }else if(wiz.step===3){
+    h=`<h3>トレーニングのご経験</h3><div class="lead">当てはまるものを選んでください。</div>
+    <div class="bigchips">${EXPS.map(v=>wizChip('experience',v,false)).join('')}</div>
+    ${d.experience?`<label class="fld">${EXP_Q[d.experience]}</label><textarea id="wz_exp_detail" placeholder="自由にどうぞ">${d.experience_detail}</textarea>`:''}`;
+  }else if(wiz.step===4){
+    h=`<h3>トレーニングの目的</h3><div class="lead">複数選べます。</div>
+    <div class="bigchips">${GOALS.map(v=>wizChip('goals',v,true)).join('')}</div>
+    <label class="fld">その他（任意）</label><input id="wz_goals_other" value="${d.goals_other}" placeholder="例：姿勢改善">`;
+  }else if(wiz.step===5){
+    h=`<h3>特に強化したい部位</h3><div class="lead">複数選べます。トレーニングメニューの参考にします。</div>
+    <div class="bigchips">${PARTS_W.map(v=>wizChip('parts',v,true)).join('')}</div>
+    <label class="fld">その他（任意）</label><input id="wz_parts_other" value="${d.parts_other}" placeholder="例：ふくらはぎ">`;
+  }else{
+    body.innerHTML='';
+    body.insertAdjacentHTML('beforeend',`<div class="wiz-done">
+      <div style="width:90px;height:90px;color:var(--ink)">${logoSVG(false)}</div>
+      <div class="arm">💪</div>
+      <h3>ようこそ、きん肉こまつへ！</h3>
+      <p>ご回答ありがとうございました。<br>あなたに合ったトレーニングをご用意してお待ちしています。</p>
+      <button class="btn" style="max-width:280px" onclick="wizClose()">はじめる</button>
+    </div>`);
+    foot.innerHTML='';
+    return;
+  }
+  body.innerHTML=h;
+  body.style.animation='none';body.offsetHeight;body.style.animation='';
+  foot.innerHTML=`
+    ${wiz.step>0?'<button class="btn ghost" style="flex:1" onclick="wizBack()">戻る</button>':''}
+    <button class="btn" style="flex:2" onclick="wizNext()">${wiz.step===5?'回答を送信する':'次へ'}</button>`;
+}
+async function wizNext(){
+  wizCollect();
+  if(wiz.step<5){wiz.step++;wizRender();}
+  else{
+    if(wiz.onDone)await wiz.onDone(wiz.data);
+    wiz.step=6;wizRender();
+  }
+}
+function wizBack(){wizCollect();wiz.step--;wizRender();}
+async function wizSkip(){
+  wizCollect();
+  if(wiz.onDone)await wiz.onDone(wiz.data);
+  wizClose();
+  toast('マイページからいつでも入力できます');
+}
+function wizClose(){
+  document.getElementById('wiz').classList.remove('show');
+  render();
+}
+
+/* ======================================================
+   会員：マイページ
+   ====================================================== */
+async function memberMeView(){
+  const { data:hist } = await sb.from('ticket_history')
+    .select('*').eq('user_id',me.id).order('created_at',{ascending:false}).limit(20);
+  const { data:sheet } = await sb.from('intake_sheets').select('*').eq('user_id',me.id).maybeSingle();
+  const filled=sheet&&(sheet.goals||sheet.parts||sheet.furigana);
+  let html=`
+    <div class="ticket-banner">${logoSVG(false)}
+      <div><div class="lbl">チケット残数</div><div class="num">${profile.tickets}<span style="font-size:16px;font-weight:700">枚</span></div></div>
+    </div>
+    <div class="card"><h2>ヒアリングシート</h2>
+      ${filled?`<div class="small" style="margin-bottom:8px">目的：${sheet.goals||'未記入'}<br>強化したい部位：${sheet.parts||'未記入'}</div>`:`<div class="small" style="margin-bottom:8px">まだ未記入です。あなたに合ったメニューづくりに役立ちます。</div>`}
+      <button class="btn sm" onclick="editMySheet()">${filled?'確認・編集する':'記入する'}</button>
+    </div>
+    <div class="card"><h2>プロフィール</h2>
+      <label class="fld">お名前</label>
+      <input id="meName" value="${profile.name}">
+      <div style="height:12px"></div>
+      <button class="btn sm" onclick="saveName()">名前を更新</button>
+    </div>
+    <div class="card"><h2>チケット履歴</h2>`;
+  if(!hist||!hist.length){html+=`<div class="empty">履歴はありません</div>`;}
+  (hist||[]).forEach(hh=>{
+    const sign=hh.delta>0?'+':'';
+    html+=`<div class="row"><div><div class="ttl">${sign}${hh.delta}枚 ${hh.by_admin?'<span class="pill">店頭追加</span>':''}</div>
+      <div class="meta">${hh.memo||''}</div></div>
+      <div class="meta">${hh.created_at?new Date(hh.created_at).toLocaleDateString('ja-JP'):''}</div></div>`;
+  });
+  html+=`</div>
+    <p class="small">チケットは店頭で現金支払い後、トレーナーが追加します。</p>`;
+  document.getElementById('screen').innerHTML=html;
+}
+async function editMySheet(){
+  const { data:sheet } = await sb.from('intake_sheets').select('*').eq('user_id',me.id).maybeSingle();
+  startWizard(rowToIntake(sheet),async d=>{
+    await sb.from('intake_sheets').upsert(intakeToRow(d,me.id));
+    toast('ヒアリングシートを保存しました');
+  });
+}
+async function saveName(){
+  const name=document.getElementById('meName').value.trim();
+  if(!name)return;
+  await sb.from('profiles').update({name}).eq('id',me.id);
+  profile.name=name;document.getElementById('whoName').textContent=name;
+  toast('更新しました');
+}
+
+/* ======================================================
+   管理者：予約状況
+   ====================================================== */
+async function adminReserveView(){
+  const days=nextDays(10);
+  if(!selDate)selDate=fmtDate(days[0]);
+  const { data:resv } = await sb.from('reservations')
+    .select('*, profiles(name), reservation_participants(target, profiles(name))')
+    .eq('date',selDate).order('hour');
+  const byHour={};(resv||[]).forEach(r=>byHour[r.hour]=r);
+  let html=`<div class="card"><h2>日付</h2><div class="daybar">`;
+  days.forEach(d=>{const ds=fmtDate(d);
+    html+=`<button class="${ds===selDate?'on':''}" onclick="selDate='${ds}';render()">
+      <div class="dow">${DOW[d.getDay()]}</div><div class="dnum">${d.getDate()}</div></button>`;});
+  html+=`</div></div><div class="card"><h2>${jdate(selDate)} の予約</h2>`;
+  let any=false;
+  slotHours().forEach(h=>{
+    const r=byHour[h];
+    if(!r)return;
+    any=true;
+    const parts=(r.reservation_participants||[]);
+    html+=`<div class="row"><div>
+      <div class="ttl">${h}:00　${r.profiles.name} <span class="pill fill">${1+parts.length}名</span></div>
+      <div class="meta">部位: ${r.target||'指定なし'}</div>
+      ${parts.map(p=>`<div class="meta">+ ${p.profiles.name}：${p.target||'指定なし'}</div>`).join('')}
+      </div>
+      <button class="btn sm danger row" onclick="adminCancel('${r.id}')">取消</button></div>`;
+  });
+  if(!any)html+=`<div class="empty">この日の予約はありません</div>`;
+  html+=`</div>`;
+  document.getElementById('screen').innerHTML=html;
+}
+async function adminCancel(id){
+  if(!confirm('この予約を取り消し、全員にチケットを返却します。'))return;
+  const { data:r } = await sb.from('reservations').select('user_id, reservation_participants(user_id)').eq('id',id).single();
+  await refundTicket(r.user_id,1,'店側都合の取消');
+  for(const p of (r.reservation_participants||[])) await refundTicket(p.user_id,1,'店側都合の取消');
+  await sb.from('reservation_participants').delete().eq('reservation_id',id);
+  await sb.from('reservations').delete().eq('id',id);
+  toast('取り消し、返却しました');render();
+}
+
+/* ======================================================
+   管理者：チケット管理
+   ====================================================== */
+async function adminTicketsView(){
+  const { data:members } = await sb.from('profiles').select('*').eq('role','member').order('name');
+  const { data:sheets } = await sb.from('intake_sheets').select('user_id,furigana');
+  const furi={};(sheets||[]).forEach(s=>furi[s.user_id]=s.furigana||'');
+  let html=`<div class="card"><h2>チケット追加（現金受領後）</h2>
+    <p class="small" style="margin-bottom:10px">回数券の現金を受け取ったら、対象会員にチケットを追加します。</p>
+    <input id="mSearch" placeholder="🔍 名前・フリガナで検索" oninput="filterMembers(this.value)" style="margin-bottom:6px">`;
+  if(!members||!members.length){html+=`<div class="empty">会員がいません</div>`;}
+  (members||[]).forEach(m=>{
+    html+=`<div class="row m-row" data-name="${m.name}" data-furi="${furi[m.id]||''}">
+      <div><div class="ttl">${m.name}</div><div class="meta">${furi[m.id]?furi[m.id]+'　':''}残 ${m.tickets} 枚</div></div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <input type="number" id="add_${m.id}" value="10" min="1" style="width:64px;padding:8px">
+        <button class="btn sm row" onclick="addTickets('${m.id}',document.getElementById('add_${m.id}').value)">追加</button>
+      </div></div>`;
+  });
+  html+=`<div class="empty m-none hide">該当する会員が見つかりません</div></div>`;
+  document.getElementById('screen').innerHTML=html;
+}
+/* 名前・フリガナでの絞り込み（ひらがな/カタカナの違いも吸収） */
+function kataToHira(s){return (s||'').replace(/[\u30a1-\u30f6]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60));}
+function filterMembers(q){
+  q=kataToHira(q.trim().toLowerCase()).replace(/[\s　]/g,'');
+  let hit=0;
+  document.querySelectorAll('.m-row').forEach(r=>{
+    const t=kataToHira((r.dataset.name+r.dataset.furi).toLowerCase()).replace(/[\s　]/g,'');
+    const show=!q||t.includes(q);
+    r.style.display=show?'':'none';
+    if(show)hit++;
+  });
+  const none=document.querySelector('.m-none');
+  if(none)none.classList.toggle('hide',hit>0);
+}
+async function addTickets(uid,n){
+  n=parseInt(n);if(!n||n<1){toast('枚数を確認してください');return;}
+  const { data:p } = await sb.from('profiles').select('tickets,name').eq('id',uid).single();
+  await sb.from('profiles').update({tickets:p.tickets+n}).eq('id',uid);
+  await sb.from('ticket_history').insert({user_id:uid,delta:n,memo:`回数券 ${n}枚（現金）`,by_admin:true});
+  toast(`${p.name}さんに${n}枚追加`);render();
+}
+
+/* ======================================================
+   管理者：会員一覧（タップでヒアリングシート閲覧）
+   ====================================================== */
+async function adminMembersView(){
+  const { data:members } = await sb.from('profiles').select('*').order('role').order('name');
+  const { data:sheets } = await sb.from('intake_sheets').select('user_id,furigana');
+  const furi={};(sheets||[]).forEach(s=>furi[s.user_id]=s.furigana||'');
+  let html=`<div class="card"><h2>会員・スタッフ一覧</h2>
+    <p class="small" style="margin-bottom:6px">会員をタップするとヒアリングシートを確認できます。</p>
+    <input id="mSearch" placeholder="🔍 名前・フリガナで検索" oninput="filterMembers(this.value)" style="margin-bottom:6px">`;
+  (members||[]).forEach(m=>{
+    const tapOK=m.id!==me.id;
+    html+=`<div class="row m-row ${tapOK?'tap':''}" data-name="${m.name}" data-furi="${furi[m.id]||''}" ${tapOK?`onclick="openMemberDetail('${m.id}')"`:''}><div>
+      <div class="ttl">${m.name} ${m.role==='admin'?'<span class="pill">トレーナー</span>':''}${m.id===me.id?'<span class="pill fill">あなた</span>':''}</div>
+      <div class="meta">${furi[m.id]?furi[m.id]+'　':''}チケット ${m.tickets} 枚${tapOK?'　▸ 詳細':''}</div></div></div>`;
+  });
+  html+=`<div class="empty m-none hide">該当する会員が見つかりません</div></div>`;
+  document.getElementById('screen').innerHTML=html;
+}
+async function openMemberDetail(uid){
+  const { data:m } = await sb.from('profiles').select('*').eq('id',uid).single();
+  const { data:s } = await sb.from('intake_sheets').select('*').eq('user_id',uid).maybeSingle();
+  let kv='';
+  SHEET_FIELDS.forEach(([k,label])=>{
+    const v=s?(s[k]||''):'';
+    kv+=`<div class="kv"><div class="k">${label}</div><div class="v ${v?'':'dim'}">${v||'未記入'}</div></div>`;
+  });
+  document.getElementById('ovBody').innerHTML=`
+    <h3>${m.name} ${m.role==='admin'?'<span class="pill">トレーナー</span>':''}</h3>
+    <div class="sub">チケット残 ${m.tickets} 枚　${m.created_at?'登録: '+String(m.created_at).slice(0,10):''}</div>
+    <div class="card" style="margin-bottom:14px"><h2>ヒアリングシート</h2>${s?kv:'<div class="empty">未記入です</div>'}</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
+      <input type="number" id="dAdd" value="10" min="1" style="width:80px">
+      <button class="btn sm row" onclick="addTickets('${m.id}',document.getElementById('dAdd').value);closeOv()">チケット追加</button>
+    </div>
+    <button class="btn ghost" onclick="toggleRole('${m.id}','${m.role}')">${m.role==='admin'?'管理者権限を外す（会員に戻す）':'このユーザーを管理者にする'}</button>`;
+  openOv();
+}
+async function toggleRole(uid,curRole){
+  const next=curRole==='admin'?'member':'admin';
+  const msg=next==='admin'
+    ?'このユーザーを管理者（トレーナー）にします。\n予約状況・チケット管理・全会員のヒアリングシートにアクセスできるようになります。よろしいですか？'
+    :'管理者権限を外して会員に戻します。よろしいですか？';
+  if(!confirm(msg))return;
+  await sb.from('profiles').update({role:next}).eq('id',uid);
+  toast(next==='admin'?'管理者にしました':'会員に戻しました');
+  closeOv();render();
+}
+
+/* ======================================================
+   管理者：設定
+   ====================================================== */
+async function adminSettingsView(){
+  document.getElementById('screen').innerHTML=`
+    <div class="card"><h2>予約枠の設定</h2>
+      <label class="fld">開始時刻</label>
+      <select id="setOpen">${[...Array(24).keys()].map(h=>`<option value="${h}" ${h===SETTINGS.openHour?'selected':''}>${h}:00</option>`).join('')}</select>
+      <label class="fld">終了時刻</label>
+      <select id="setClose">${[...Array(25).keys()].map(h=>`<option value="${h}" ${h===SETTINGS.closeHour?'selected':''}>${h}:00</option>`).join('')}</select>
+      <label class="fld">営業日</label>
+      <select id="setWd"><option value="1" ${SETTINGS.weekdaysOnly?'selected':''}>平日のみ</option><option value="0" ${!SETTINGS.weekdaysOnly?'selected':''}>毎日</option></select>
+      <label class="fld">1予約あたりの最大人数（相乗り含む）</label>
+      <input type="number" id="setParty" value="${SETTINGS.maxParty}" min="1" max="10">
+      <div style="height:16px"></div>
+      <button class="btn" onclick="saveSettings()">保存する</button>
+    </div>
+    <div class="small">変更すると会員の予約画面の枠が即時切り替わります。</div>`;
+}
+async function saveSettings(){
+  const o=+document.getElementById('setOpen').value;
+  const c=+document.getElementById('setClose').value;
+  const wd=document.getElementById('setWd').value==='1';
+  const mp=+document.getElementById('setParty').value;
+  if(c<=o){toast('終了は開始より後にしてください');return;}
+  await sb.from('settings').upsert({id:1,open_hour:o,close_hour:c,weekdays_only:wd,max_party:mp});
+  SETTINGS={openHour:o,closeHour:c,weekdaysOnly:wd,maxParty:mp};
+  toast('保存しました');render();
+}
+
+/* ---------- 共通UI ---------- */
+function openOv(){document.getElementById('ov').classList.add('show');}
+function closeOv(){document.getElementById('ov').classList.remove('show');}
+document.getElementById('ov').addEventListener('click',e=>{if(e.target.id==='ov')closeOv();});
+let toastT;
+function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove('show'),2400);}
+</script>
+</body>
+</html>
