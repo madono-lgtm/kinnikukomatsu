@@ -927,7 +927,7 @@ function wizRender(){
   let h='';
   if(wiz.step===0){
     h=`<h3>はじめまして！</h3><div class="lead">あなたに合ったトレーニングのために、少しだけ教えてください。差し支えのない範囲でOKです。</div>
-    <label class="fld">フリガナ</label><input id="wz_furigana" value="${d.furigana}" placeholder="ヤマモト レン">
+    <label class="fld">フリガナ</label><input id="wz_furigana" value="${d.furigana}" placeholder="キンニク　コマツ">
     <label class="fld">生年月日</label><input id="wz_birth" type="date" value="${d.birth}">
     <label class="fld">性別</label><div class="bigchips">${['女性','男性','回答しない'].map(v=>wizChip('gender',v,false)).join('')}</div>
     <div class="grid2">
@@ -1016,6 +1016,14 @@ async function memberMeView(){
       <div style="height:12px"></div>
       <button class="btn sm" onclick="saveName()">名前を更新</button>
     </div>
+    <div class="card"><h2>パスワード変更</h2>
+      <label class="fld">新しいパスワード</label>
+      <input id="newPass" type="password" placeholder="6文字以上">
+      <label class="fld">新しいパスワード（確認）</label>
+      <input id="newPass2" type="password" placeholder="もう一度入力">
+      <div style="height:12px"></div>
+      <button class="btn sm ghost" onclick="changePassword()">パスワードを変更する</button>
+    </div>
     <div class="card"><h2>チケット履歴</h2>`;
   if(!hist||!hist.length){html+=`<div class="empty">履歴はありません</div>`;}
   (hist||[]).forEach(hh=>{
@@ -1041,6 +1049,18 @@ async function saveName(){
   await sb.from('profiles').update({name}).eq('id',me.id);
   profile.name=name;document.getElementById('whoName').textContent=name;
   toast('更新しました');
+}
+async function changePassword(){
+  const p1=document.getElementById('newPass').value;
+  const p2=document.getElementById('newPass2').value;
+  if(!p1){toast('新しいパスワードを入力してください');return;}
+  if(p1.length<6){toast('パスワードは6文字以上にしてください');return;}
+  if(p1!==p2){toast('パスワードが一致していません');return;}
+  const { error } = await sb.auth.updateUser({password:p1});
+  if(error){toast('エラー: '+error.message);return;}
+  document.getElementById('newPass').value='';
+  document.getElementById('newPass2').value='';
+  toast('パスワードを変更しました ✓');
 }
 
 /* ======================================================
@@ -1092,16 +1112,16 @@ async function adminTicketsView(){
   const { data:members } = await sb.from('profiles').select('*').eq('role','member').order('name');
   const { data:sheets } = await sb.from('intake_sheets').select('user_id,furigana');
   const furi={};(sheets||[]).forEach(s=>furi[s.user_id]=s.furigana||'');
-  let html=`<div class="card"><h2>チケット追加（現金受領後）</h2>
-    <p class="small" style="margin-bottom:10px">回数券の現金を受け取ったら、対象会員にチケットを追加します。</p>
+  let html=`<div class="card"><h2>チケット管理</h2>
+    <p class="small" style="margin-bottom:10px">現金を受け取ったら、合計の枚数を入力して「修正」を押します。名前タップで詳細も開けます。</p>
     <input id="mSearch" placeholder="🔍 名前・フリガナで検索" oninput="filterMembers(this.value)" style="margin-bottom:6px">`;
   if(!members||!members.length){html+=`<div class="empty">会員がいません</div>`;}
   (members||[]).forEach(m=>{
     html+=`<div class="row m-row" data-name="${m.name}" data-furi="${furi[m.id]||''}">
-      <div><div class="ttl">${m.name}</div><div class="meta">${furi[m.id]?furi[m.id]+'　':''}残 ${m.tickets} 枚</div></div>
+      <div class="tap" style="flex:1" onclick="openMemberDetail('${m.id}')"><div class="ttl">${m.name} <span style="font-size:11px;color:var(--muted)">▸ 詳細</span></div><div class="meta">${furi[m.id]?furi[m.id]+'　':''}残 ${m.tickets} 枚</div></div>
       <div style="display:flex;gap:6px;align-items:center">
-        <input type="number" id="add_${m.id}" value="10" min="1" style="width:64px;padding:8px">
-        <button class="btn sm row" onclick="addTickets('${m.id}',document.getElementById('add_${m.id}').value)">追加</button>
+        <input type="number" id="set_${m.id}" value="${m.tickets}" min="0" style="width:64px;padding:8px">
+        <button class="btn sm row" onclick="setTickets('${m.id}',document.getElementById('set_${m.id}').value)">修正</button>
       </div></div>`;
   });
   html+=`<div class="empty m-none hide">該当する会員が見つかりません</div></div>`;
@@ -1121,14 +1141,6 @@ function filterMembers(q){
   const none=document.querySelector('.m-none');
   if(none)none.classList.toggle('hide',hit>0);
 }
-async function addTickets(uid,n){
-  n=parseInt(n);if(!n||n<1){toast('枚数を確認してください');return;}
-  const { data:p } = await sb.from('profiles').select('tickets,name').eq('id',uid).single();
-  await sb.from('profiles').update({tickets:p.tickets+n}).eq('id',uid);
-  await sb.from('ticket_history').insert({user_id:uid,delta:n,memo:`回数券 ${n}枚（現金）`,by_admin:true});
-  toast(`${p.name}さんに${n}枚追加`);render();
-}
-
 /* ======================================================
    管理者：会員一覧（タップでヒアリングシート閲覧）
    ====================================================== */
@@ -1158,14 +1170,36 @@ async function openMemberDetail(uid){
   });
   document.getElementById('ovBody').innerHTML=`
     <h3>${m.name} ${m.role==='admin'?'<span class="pill">トレーナー</span>':''}</h3>
-    <div class="sub">チケット残 ${m.tickets} 枚　${m.created_at?'登録: '+String(m.created_at).slice(0,10):''}</div>
-    <div class="card" style="margin-bottom:14px"><h2>ヒアリングシート</h2>${s?kv:'<div class="empty">未記入です</div>'}</div>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
-      <input type="number" id="dAdd" value="10" min="1" style="width:80px">
-      <button class="btn sm row" onclick="addTickets('${m.id}',document.getElementById('dAdd').value);closeOv()">チケット追加</button>
+    <div class="sub">登録: ${m.created_at?String(m.created_at).slice(0,10):'—'}</div>
+    <div class="card" style="margin-bottom:14px"><h2>チケット管理</h2>
+      <div style="text-align:center;margin-bottom:14px">
+        <div style="font-size:11px;color:var(--muted);letter-spacing:.1em">現在の残数</div>
+        <div style="font-size:40px;font-weight:900;line-height:1">${m.tickets}<span style="font-size:16px">枚</span></div>
+      </div>
+      <label class="fld">チケット枚数を修正</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="number" id="dSet" value="${m.tickets}" min="0" style="flex:1">
+        <button class="btn sm" style="white-space:nowrap" onclick="setTickets('${m.id}',document.getElementById('dSet').value)">この枚数に修正</button>
+      </div>
+      <p class="small" style="margin-top:8px">現金を受け取ったら、合計の枚数を入力して修正します。</p>
     </div>
+    <div class="card" style="margin-bottom:14px"><h2>ヒアリングシート</h2>${s?kv:'<div class="empty">未記入です</div>'}</div>
     <button class="btn ghost" onclick="toggleRole('${m.id}','${m.role}')">${m.role==='admin'?'管理者権限を外す（会員に戻す）':'このユーザーを管理者にする'}</button>`;
   openOv();
+}
+/* チケットを特定枚数に直接修正 */
+async function setTickets(uid,value){
+  value=parseInt(value);
+  if(isNaN(value)||value<0){toast('0以上の枚数を入力してください');return;}
+  const { data:p } = await sb.from('profiles').select('tickets,name').eq('id',uid).single();
+  const delta=value-p.tickets;
+  if(delta===0){toast('枚数に変更がありません');return;}
+  await sb.from('profiles').update({tickets:value}).eq('id',uid);
+  await sb.from('ticket_history').insert({user_id:uid,delta,memo:`枚数修正（${p.tickets}→${value}）`,by_admin:true});
+  toast(`${p.name}さん：${value}枚に修正`);
+  const ovOpen=document.getElementById('ov').classList.contains('show');
+  if(ovOpen)openMemberDetail(uid);
+  else render();
 }
 async function toggleRole(uid,curRole){
   const next=curRole==='admin'?'member':'admin';
@@ -1195,7 +1229,15 @@ async function adminSettingsView(){
       <div style="height:16px"></div>
       <button class="btn" onclick="saveSettings()">保存する</button>
     </div>
-    <div class="small">変更すると会員の予約画面の枠が即時切り替わります。</div>`;
+    <div class="small">変更すると会員の予約画面の枠が即時切り替わります。</div>
+    <div class="card" style="margin-top:16px"><h2>パスワード変更</h2>
+      <label class="fld">新しいパスワード</label>
+      <input id="newPass" type="password" placeholder="6文字以上">
+      <label class="fld">新しいパスワード（確認）</label>
+      <input id="newPass2" type="password" placeholder="もう一度入力">
+      <div style="height:12px"></div>
+      <button class="btn sm ghost" onclick="changePassword()">パスワードを変更する</button>
+    </div>`;
 }
 async function saveSettings(){
   const o=+document.getElementById('setOpen').value;
