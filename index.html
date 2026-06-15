@@ -578,6 +578,8 @@ function nextDays(n){
 }
 function slotHours(){const a=[];for(let h=SETTINGS.openHour;h<SETTINGS.closeHour;h++)a.push(h);return a;}
 function jdate(ds){const [y,m,dd]=ds.split('-');const d=new Date(+y,+m-1,+dd);return `${+m}/${+dd}(${DOW[d.getDay()]})`;}
+/* 予約日が今日（当日）かどうか */
+function isToday(ds){return ds===fmtDate(new Date());}
 
 /* ======================================================
    会員：予約画面
@@ -770,15 +772,17 @@ async function memberMineView(){
   }
   (owned||[]).forEach(r=>{
     const others=(r.reservation_participants||[]).map(p=>p.profiles.name);
+    const todayBadge=isToday(r.date)?' <span class="pill" style="border-color:var(--danger);color:var(--danger)">当日・返却なし</span>':'';
     html+=`<div class="row">
-      <div><div class="ttl">${jdate(r.date)} ${r.hour}:00 <span class="pill fill">予約者</span></div>
+      <div><div class="ttl">${jdate(r.date)} ${r.hour}:00 <span class="pill fill">予約者</span>${todayBadge}</div>
         <div class="meta">${r.target||'部位指定なし'}${others.length?'　+'+others.join('・'):''}</div></div>
       <button class="btn sm danger row" onclick="cancelReserve('${r.id}')">取消</button></div>`;
   });
   joinedFuture.forEach(j=>{
     const r=j.reservations;
+    const todayBadge=isToday(r.date)?' <span class="pill" style="border-color:var(--danger);color:var(--danger)">当日・返却なし</span>':'';
     html+=`<div class="row">
-      <div><div class="ttl">${jdate(r.date)} ${r.hour}:00 <span class="pill">参加</span></div>
+      <div><div class="ttl">${jdate(r.date)} ${r.hour}:00 <span class="pill">参加</span>${todayBadge}</div>
         <div class="meta">${r.profiles.name}さんの枠 / ${j.target||'部位指定なし'}</div></div>
       <button class="btn sm ghost row" onclick="cancelJoin('${r.id}')">参加取消</button></div>`;
   });
@@ -786,20 +790,43 @@ async function memberMineView(){
   document.getElementById('screen').innerHTML=html;
 }
 async function cancelReserve(id){
-  if(!confirm('予約を取り消します。よろしいですか？\n（チケットは返却されます）'))return;
+  const { data:r } = await sb.from('reservations').select('date').eq('id',id).single();
+  const sameDay=isToday(r.date);
+  const msg=sameDay
+    ?'本日の予約を取り消します。\n当日のキャンセルのため、チケットは返却されません。よろしいですか？'
+    :'予約を取り消します。\nチケットは返却されます。よろしいですか？';
+  if(!confirm(msg))return;
   const { data:parts } = await sb.from('reservation_participants').select('user_id').eq('reservation_id',id);
-  for(const p of (parts||[])) await refundTicket(p.user_id,1,'予約取消に伴う返却');
+  if(!sameDay){
+    for(const p of (parts||[])) await refundTicket(p.user_id,1,'予約取消に伴う返却');
+  }
   await sb.from('reservation_participants').delete().eq('reservation_id',id);
   await sb.from('reservations').delete().eq('id',id);
-  await refundTicket(me.id,1,'予約取消');
-  profile.tickets+=1;
-  toast('取り消しました');render();
+  if(!sameDay){
+    await refundTicket(me.id,1,'予約取消（前日まで）');
+    profile.tickets+=1;
+    toast('取り消し、チケットを返却しました');
+  }else{
+    toast('取り消しました（当日のため返却なし）');
+  }
+  render();
 }
 async function cancelJoin(resId){
-  if(!confirm('参加を取り消します。チケットは返却されます。'))return;
+  const { data:r } = await sb.from('reservations').select('date').eq('id',resId).single();
+  const sameDay=isToday(r.date);
+  const msg=sameDay
+    ?'本日の予約への参加を取り消します。\n当日のため、チケットは返却されません。よろしいですか？'
+    :'参加を取り消します。\nチケットは返却されます。よろしいですか？';
+  if(!confirm(msg))return;
   await sb.from('reservation_participants').delete().eq('reservation_id',resId).eq('user_id',me.id);
-  await refundTicket(me.id,1,'参加取消');
-  profile.tickets+=1;toast('取り消しました');render();
+  if(!sameDay){
+    await refundTicket(me.id,1,'参加取消（前日まで）');
+    profile.tickets+=1;
+    toast('取り消し、チケットを返却しました');
+  }else{
+    toast('取り消しました（当日のため返却なし）');
+  }
+  render();
 }
 async function refundTicket(uid,n,memo){
   const { data:p } = await sb.from('profiles').select('tickets').eq('id',uid).single();
@@ -1096,13 +1123,28 @@ async function adminReserveView(){
   document.getElementById('screen').innerHTML=html;
 }
 async function adminCancel(id){
-  if(!confirm('この予約を取り消し、全員にチケットを返却します。'))return;
+  const { data:r } = await sb.from('reservations').select('*, profiles(name), reservation_participants(user_id)').eq('id',id).single();
+  const cnt=1+(r.reservation_participants||[]).length;
+  document.getElementById('ovBody').innerHTML=`
+    <h3>予約を取り消す</h3>
+    <div class="sub">${jdate(r.date)}　${r.hour}:00〜　${r.profiles.name}さん 他 計${cnt}名</div>
+    <p class="small" style="margin-bottom:16px">チケットを返却するか選んでください。返却すると参加者全員に1枚ずつ戻ります。</p>
+    <button class="btn" style="margin-bottom:10px" onclick="doAdminCancel('${id}',true)">取り消して チケットを返却する</button>
+    <button class="btn ghost" style="margin-bottom:10px" onclick="doAdminCancel('${id}',false)">取り消す（返却しない）</button>
+    <button class="btn ghost" onclick="closeOv()">やめる</button>`;
+  openOv();
+}
+async function doAdminCancel(id,refund){
   const { data:r } = await sb.from('reservations').select('user_id, reservation_participants(user_id)').eq('id',id).single();
-  await refundTicket(r.user_id,1,'店側都合の取消');
-  for(const p of (r.reservation_participants||[])) await refundTicket(p.user_id,1,'店側都合の取消');
+  if(refund){
+    await refundTicket(r.user_id,1,'店側都合の取消');
+    for(const p of (r.reservation_participants||[])) await refundTicket(p.user_id,1,'店側都合の取消');
+  }
   await sb.from('reservation_participants').delete().eq('reservation_id',id);
   await sb.from('reservations').delete().eq('id',id);
-  toast('取り消し、返却しました');render();
+  closeOv();
+  toast(refund?'取り消し、返却しました':'取り消しました（返却なし）');
+  render();
 }
 
 /* ======================================================
