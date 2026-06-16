@@ -193,6 +193,16 @@
     <input id="auEmail" type="email" placeholder="you@example.com" autocomplete="email">
     <label class="fld">パスワード</label>
     <input id="auPass" type="password" placeholder="6文字以上" autocomplete="current-password">
+    <div id="agreeFld" class="hide" style="margin-top:14px">
+      <div onclick="openTerms()" style="border:1.5px solid var(--ink);border-radius:9px;padding:11px 13px;cursor:pointer;display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:13px;font-weight:700">📄 利用規約を読む（必須）</span>
+        <span style="font-size:12px;color:var(--muted)">タップで開く ▸</span>
+      </div>
+      <label style="display:flex;align-items:flex-start;gap:9px;margin-top:11px;font-size:13px;line-height:1.5;opacity:.95">
+        <input type="checkbox" id="auAgree" onclick="return false" style="width:20px;height:20px;flex-shrink:0;margin-top:1px;accent-color:#0a0a0a;pointer-events:none">
+        <span>利用規約を最後まで読み、同意します（チケットの有効期限は初回利用から6か月、当日キャンセルは1回分消費など）<br><span style="font-size:11px;color:var(--muted)">※ 上の「利用規約を読む」から確認すると自動でチェックが入ります</span></span>
+      </label>
+    </div>
     <div style="height:18px"></div>
     <button class="btn" id="authBtn" onclick="doAuth()">ログイン</button>
     <div id="authMsg" class="msg"></div>
@@ -250,6 +260,85 @@ const DEMO = false;
 let SETTINGS = { openHour:10, closeHour:21, weekdaysOnly:true, maxParty:3 };
 
 let sb=null, me=null, profile=null, authMode='login', curTab='reserve', selDate=null;
+
+/* ============ 利用規約 全文 ============ */
+const TERMS_TEXT = `【利用規約】
+
+この利用規約（以下、「本規約」と言います。）は、きん肉こまつが提供するトレーニングサービス（以下、本サービス）の利用に関し、当店と本サービスをご利用されるお客様（以下、「会員様」）との間に適用されます。
+
+本規約において以下の用語は以下の意味で使用するものとします。
+1.「本サービス」当店が会員様に対し、提供するトレーニング及びそれに関するサービスを言います。
+2.「本契約」当店と会員様の間で、基づく契約を言います。
+3.「施設等」本サービスで使用するトレーニング施設（設備、器具、更衣室、その他付随する当店の施設等を含む）を言います。
+
+【料金、返金、キャンセルについて】
+・料金は前払いとさせて頂きます。
+・回数券チケットの利用は1回以上サービスを行った場合は理由の如何を問わず返金されないものとします。
+・一度お支払い頂いた料金は、原則返金致しません。
+・回数券チケットの有効期限は、店舗でお支払いいただきチケットが追加され、それを初めて利用した日から6か月とさせて頂きます。
+・キャンセルは前日の23時59分までにご連絡ください。
+・当日のキャンセルは誠に申し訳ございませんが、一回分の消化とさせて頂きます。
+・ご予約のお時間を過ぎられて来店されますと、ご利用時間が短縮されます。ご了承ください。
+・当日のご連絡無くお越しにならなかった場合、当日のキャンセル扱いとなり、一回分の消費となります。
+
+【禁止事項について】
+以下の事由に各当する方はサービスのご利用をお断りさせて頂きます。
+(1) 過去に本規約に違反し、利用をお断りされた方
+(2) 本サービスの提供を受けることにより健康状態が悪化する恐れのある方
+(3) 本サービスの秩序を乱す恐れがあると認められる合理的理由のある場合
+(4) 酒気帯びてのご利用
+(5) 他の会員様、及び提携施設に関する誹謗、中傷する行為
+(6) スタッフ及び関係者に対する退職の勧誘、他社への就職あっせん、引き抜き行為、その他これらに類する行為
+(7) 営業妨害とみなされる行為
+(8) その他、本サービスの目的にそぐわない行為
+(9) 暴力団、または反社会勢力に所属する方、その関係者
+
+【シューズの保管について】
+前回のトレーニングから一定期間を過ぎてもお越しになられないお客様のシューズは、期間問わず当店の判断で破棄させて頂きます。
+
+【免責、損害賠償】
+当店の帰責事由によることなく発生した以下の会員様の損害等に関し、債務不履行、不法行為等一切の責を免れるものとし、会員様は、自己の費用と責任においてこれを解決するものとし、当店に損害を与えないものとする。
+
+(1) 本サービス利用中に起きた会員様の怪我、筋肉痛、損害、病気、持病等の発生、その他一切の健康状態の変化
+(2) トレーナーの行う正当な指導行為に基づき発生する会員様の精神的、肉体的疲労や苦痛
+(3) 本サービス中に起きた盗難又は紛失等
+(4) 会員様間の紛争、会員様と第三者の紛争
+
+当店の施設に際して、本人が生じた人的（筋肉痛、怪我）、物的事故について当店は一切の責を負いません。会員様が当店の施設に際して、当会または第三者の損害を与えた場合、会員様が速やかにその賠償を与えた原因が明らかにトレーナーの過失、及び器具類による場合はこの限りではありません。
+
+きん肉こまつ`;
+
+function openTerms(){
+  document.getElementById('ovBody').innerHTML=`
+    <h3>利用規約</h3>
+    <div class="sub">最後までお読みいただくと、同意ボタンが押せるようになります</div>
+    <div id="termsScroll" style="white-space:pre-wrap;font-size:12.5px;line-height:1.85;height:58vh;overflow-y:auto;border:1px solid var(--line);border-radius:9px;padding:14px;background:var(--smoke)">${TERMS_TEXT}<div style="height:8px"></div><div style="text-align:center;font-size:11px;color:var(--muted);border-top:1px dashed var(--line);padding-top:10px;margin-top:10px">― 以上が利用規約です ―</div></div>
+    <div id="termsHint" style="text-align:center;font-size:11px;color:var(--muted);margin-top:8px">▼ 最後までスクロールしてください</div>
+    <div style="height:6px"></div>
+    <button class="btn" id="termsAgreeBtn" onclick="agreeFromTerms()" disabled style="opacity:.35">同意して閉じる</button>
+    <button class="btn ghost" style="margin-top:8px" onclick="closeOv()">閉じる</button>`;
+  openOv();
+  const sc=document.getElementById('termsScroll');
+  const btn=document.getElementById('termsAgreeBtn');
+  const hint=document.getElementById('termsHint');
+  function check(){
+    if(sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 8){
+      btn.disabled=false;
+      btn.style.opacity='1';
+      hint.textContent='✓ 最後まで確認しました';
+      hint.style.color='#16a34a';
+    }
+  }
+  sc.addEventListener('scroll',check);
+  // 内容が短くスクロール不要な場合は即解放
+  setTimeout(()=>{ if(sc.scrollHeight<=sc.clientHeight+8){btn.disabled=false;btn.style.opacity='1';hint.textContent='✓ 確認しました';hint.style.color='#16a34a';} },100);
+}
+function agreeFromTerms(){
+  const cb=document.getElementById('auAgree');
+  if(cb)cb.checked=true;
+  closeOv();
+  toast('利用規約に同意しました');
+}
 
 /* ============ ロゴ（きん肉こまつ・腕マーク）SVG ============ */
 function logoSVG(animated){
@@ -455,6 +544,7 @@ function setAuthMode(m){
   document.getElementById('segLogin').classList.toggle('on',!isS);
   document.getElementById('segSignup').classList.toggle('on',isS);
   document.getElementById('nameFld').classList.toggle('hide',!isS);
+  document.getElementById('agreeFld').classList.toggle('hide',!isS);
   document.getElementById('authBtn').textContent=isS?'登録する':'ログイン';
   document.getElementById('switchTxt').textContent=isS?'すでにアカウントをお持ちの方は ':'アカウントをお持ちでない方は ';
   document.getElementById('switchLink').textContent=isS?'ログイン':'新規登録';
@@ -472,6 +562,8 @@ async function doAuth(){
     if(authMode==='signup'){
       const name=document.getElementById('auName').value.trim();
       if(!name){authMsg('お名前を入力してください','err');return;}
+      const agreed=document.getElementById('auAgree').checked;
+      if(!agreed){authMsg('利用規約をご確認の上、同意にチェックを入れてください','err');return;}
       const { data, error } = await sb.auth.signUp({email,password:pass});
       if(error) throw error;
       /* 最初に登録した1人目は自動でトレーナー（管理者）になる */
