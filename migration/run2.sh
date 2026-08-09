@@ -19,18 +19,30 @@ fi
 echo "================================================================"
 echo " ステップ1/3: Google Cloud CLI を準備します(初回は数分かかります)"
 echo "================================================================"
-if command -v gcloud >/dev/null; then
-  GCLOUD=$(command -v gcloud)
-elif [ -x "$DIR/google-cloud-sdk/bin/gcloud" ]; then
-  GCLOUD="$DIR/google-cloud-sdk/bin/gcloud"
-else
+if [ ! -x "$DIR/google-cloud-sdk/bin/gcloud" ]; then
   ARCH=$(uname -m)
   if [ "$ARCH" = "arm64" ]; then PKG=darwin-arm; else PKG=darwin-x86_64; fi
   echo "ダウンロード中..."
   curl -# -O "https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-${PKG}.tar.gz"
   tar xzf "google-cloud-cli-${PKG}.tar.gz"
   rm -f "google-cloud-cli-${PKG}.tar.gz"
-  GCLOUD="$DIR/google-cloud-sdk/bin/gcloud"
+fi
+GCLOUD="$DIR/google-cloud-sdk/bin/gcloud"
+
+# Macに入っているPythonが古くても動くよう、gcloud同梱のPythonを使う
+BUNDLED_PY="$DIR/google-cloud-sdk/platform/bundledpythonunix/bin/python3"
+if [ ! -x "$BUNDLED_PY" ]; then
+  echo "同梱Pythonをセットアップ中(数分かかります)..."
+  "$DIR/google-cloud-sdk/install.sh" --quiet --usage-reporting false \
+    --path-update false --command-completion false --install-python true
+fi
+if [ -x "$BUNDLED_PY" ]; then
+  export CLOUDSDK_PYTHON="$BUNDLED_PY"
+fi
+if ! "$GCLOUD" --version >/dev/null 2>&1; then
+  echo "gcloud の準備に失敗しました。以下のエラーを報告してください:"
+  "$GCLOUD" --version || true
+  exit 1
 fi
 echo "→ OK"
 
