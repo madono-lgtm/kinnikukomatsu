@@ -29,15 +29,21 @@ if [ ! -x "$DIR/google-cloud-sdk/bin/gcloud" ]; then
 fi
 GCLOUD="$DIR/google-cloud-sdk/bin/gcloud"
 
-# Macに入っているPythonが古くても動くよう、gcloud同梱のPythonを使う
+# gcloud が使う Python の決定:
+#  1. CLOUDSDK_PYTHON が指定済みならそれを使う(python.org からインストールした場合など)
+#  2. gcloud 同梱の Python があればそれを使う
+#  3. どちらも無ければ同梱 Python のセットアップを試みる
 BUNDLED_PY="$DIR/google-cloud-sdk/platform/bundledpythonunix/bin/python3"
-if [ ! -x "$BUNDLED_PY" ]; then
+if [ -n "$CLOUDSDK_PYTHON" ] && [ -x "$CLOUDSDK_PYTHON" ]; then
+  echo "指定された Python を使います: $CLOUDSDK_PYTHON"
+elif [ -x "$BUNDLED_PY" ]; then
+  export CLOUDSDK_PYTHON="$BUNDLED_PY"
+else
   echo "同梱Pythonをセットアップ中(数分かかります)..."
   "$DIR/google-cloud-sdk/install.sh" --quiet --usage-reporting false \
-    --path-update false --command-completion false --install-python true
-fi
-if [ -x "$BUNDLED_PY" ]; then
-  export CLOUDSDK_PYTHON="$BUNDLED_PY"
+    --path-update false --command-completion false --install-python true \
+    || echo "(同梱Pythonは利用できませんでした)"
+  [ -x "$BUNDLED_PY" ] && export CLOUDSDK_PYTHON="$BUNDLED_PY"
 fi
 if ! "$GCLOUD" --version >/dev/null 2>&1; then
   echo "gcloud の準備に失敗しました。以下のエラーを報告してください:"
