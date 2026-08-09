@@ -3,18 +3,24 @@
 //   必要ファイル(このスクリプトと同じフォルダに置く):
 //     export.json        … Supabase からエクスポートしたデータ
 //     serviceAccount.json … Firebase のサービスアカウント秘密鍵
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { initializeApp, cert } from 'firebase-admin/app';
+import { initializeApp, cert, applicationDefault } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const data = JSON.parse(readFileSync(join(here, 'export.json'), 'utf8'));
-const serviceAccount = JSON.parse(readFileSync(join(here, 'serviceAccount.json'), 'utf8'));
 
-initializeApp({ credential: cert(serviceAccount) });
+// serviceAccount.json があればそれを使い、無ければ
+// gcloud auth application-default login のログイン情報(ADC)を使う
+const saPath = join(here, 'serviceAccount.json');
+if (existsSync(saPath)) {
+  initializeApp({ credential: cert(JSON.parse(readFileSync(saPath, 'utf8'))) });
+} else {
+  initializeApp({ credential: applicationDefault(), projectId: 'kinnikukomatu' });
+}
 const auth = getAuth();
 const db = getFirestore();
 
