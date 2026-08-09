@@ -6,7 +6,10 @@
 <meta name="color-scheme" content="light only">
 <meta name="supported-color-schemes" content="light">
 <title>きん肉こまつ｜予約・チケット管理</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
 <style>
   :root{
     color-scheme: light only;
@@ -251,10 +254,18 @@
 
 <script>
 /* ============================================================
-   設定：ここに Supabase の値を入れてください
+   設定：ここに Firebase の値を入れてください
+   （Firebase コンソール → プロジェクトの設定 → マイアプリ → SDK の設定と構成）
+   手順の詳細は FIREBASE_SETUP.md を参照
    ============================================================ */
-const SUPABASE_URL  = "https://ilwhotpmdziedqmirkfu.supabase.co";
-const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlsd2hvdHBtZHppZWRxbWlya2Z1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEyMTc4NzYsImV4cCI6MjA5Njc5Mzg3Nn0.MKcHpYuvVYeOCyO6P2q4E2fEokC1bQECDhfzGqLthR0";
+const FIREBASE_CONFIG = {
+  apiKey: "ここに apiKey を貼り付け",
+  authDomain: "ここに authDomain を貼り付け",
+  projectId: "ここに projectId を貼り付け",
+  storageBucket: "ここに storageBucket を貼り付け",
+  messagingSenderId: "ここに messagingSenderId を貼り付け",
+  appId: "ここに appId を貼り付け"
+};
 /* 管理者について：最初に登録したアカウントが自動でトレーナー（管理者）になります。
    以降は管理者が「会員」タブから権限を付与できます。 */
 
@@ -380,12 +391,18 @@ async function init(){
   document.getElementById('authLogo').innerHTML=logoSVG(false)+`<div class="big">きん肉こまつ</div><div class="tag">PERSONAL TRAINING</div>`;
   document.getElementById('hdrLogo').innerHTML=logoSVG(false)+`<span class="big">きん肉こまつ</span><span class="tag" id="roleTag">MEMBER</span>`;
   if(DEMO){ startDemo(); return; }
-  if(SUPABASE_URL.startsWith("ここに")){
+  if(typeof firebase==='undefined'){
     document.getElementById('authMsg').className='msg err show';
-    document.getElementById('authMsg').textContent='Supabaseの設定が未入力です。コード上部のSUPABASE_URLとSUPABASE_ANONを設定してください。';
+    document.getElementById('authMsg').textContent='Firebase SDK を読み込めませんでした。通信環境をご確認のうえ再読み込みしてください。';
     return;
   }
-  sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  if(FIREBASE_CONFIG.apiKey.startsWith("ここに")){
+    document.getElementById('authMsg').className='msg err show';
+    document.getElementById('authMsg').textContent='Firebaseの設定が未入力です。コード上部のFIREBASE_CONFIGを設定してください（FIREBASE_SETUP.md 参照）。';
+    return;
+  }
+  firebase.initializeApp(FIREBASE_CONFIG);
+  sb = makeFirebaseSb();
   const { data:{ session } } = await sb.auth.getSession();
   if(session){ await afterLogin(); }
 }
@@ -554,6 +571,219 @@ function demoSignup(){
   });
 }
 
+/* ============================================================
+   Firebase アダプタ
+   Supabase 互換の sb API（このアプリで使う範囲のみ）を
+   Firebase Auth / Firestore / Storage で実装する。
+   コレクション名は旧テーブル名と同じ。ドキュメントIDは
+   profiles=uid, settings=固定"1", intake_sheets=user_id, 他は自動ID。
+   行データには常に id フィールドを付けて返す。
+   ============================================================ */
+function makeFirebaseSb(){
+  const auth=firebase.auth();
+  const db=firebase.firestore();
+  const fst=firebase.storage();
+
+  const rowOf=(doc)=>doc.exists?{id:doc.id,...doc.data()}:null;
+  const docData=async(table,id)=>{
+    if(id===undefined||id===null)return null;
+    return rowOf(await db.collection(table).doc(String(id)).get());
+  };
+  const whereGet=async(table,pairs)=>{
+    let q=db.collection(table);
+    pairs.forEach(([c,v])=>{q=q.where(c,'==',v);});
+    return (await q.get()).docs.map(rowOf);
+  };
+
+  /* デモ用モックの hydrate と同じ関連付けを Firestore で行う */
+  async function hydrate(table,r,sel){
+    if(!r)return r;
+    const want=(name)=>sel&&sel.includes(name+'(');
+    if(table==='reservations'){
+      if(want('profiles'))r.profiles=await docData('profiles',r.user_id);
+      if(want('reservation_participants')){
+        const parts=await whereGet('reservation_participants',[['reservation_id',r.id]]);
+        r.reservation_participants=await Promise.all(parts.map(async p=>({...p,profiles:await docData('profiles',p.user_id)})));
+      }
+    }
+    if(table==='reservation_participants'){
+      if(want('profiles'))r.profiles=await docData('profiles',r.user_id);
+      if(want('reservations')){
+        r.reservations=await docData('reservations',r.reservation_id);
+        if(r.reservations)r.reservations={...r.reservations,profiles:await docData('profiles',r.reservations.user_id)};
+      }
+    }
+    if(table==='group_members'){
+      if(want('groups'))r.groups=await docData('groups',r.group_id);
+      if(want('profiles'))r.profiles=await docData('profiles',r.user_id);
+    }
+    return r;
+  }
+
+  const stripId=(p)=>{const {id,...rest}=p;return rest;};
+  const withCreatedAt=(p)=>('created_at' in p)?p:{...p,created_at:new Date().toISOString()};
+
+  function query(table){
+    const eqs=[];       /* Firestore where に渡す等価条件 */
+    let idEq=null;      /* id 指定はドキュメント取得に変換 */
+    const post=[];      /* クライアント側で適用する条件 */
+    const orders=[];
+    let sel='*', lim=null;
+    const api={
+      select(s){sel=s||'*';return api;},
+      eq(col,val){if(col==='id')idEq=val;else eqs.push([col,val]);return api;},
+      gte(col,val){post.push(r=>r[col]>=val);return api;},
+      lte(col,val){post.push(r=>r[col]<=val);return api;},
+      order(col,opt){orders.push([col,!(opt&&opt.ascending===false)]);return api;},
+      limit(n){lim=n;return api;},
+      async _run(){
+        let rows;
+        if(idEq!==null){
+          const r=await docData(table,idEq);
+          rows=r?[r]:[];
+          rows=rows.filter(r=>eqs.every(([c,v])=>r[c]===v));
+        }else{
+          rows=await whereGet(table,eqs);
+        }
+        rows=rows.filter(r=>post.every(f=>f(r)));
+        orders.reverse().forEach(([c,asc])=>{
+          rows.sort((a,b)=>{const x=a[c],y=b[c];if(x===y)return 0;return (x<y?-1:1)*(asc?1:-1);});
+        });
+        if(lim!==null)rows=rows.slice(0,lim);
+        return Promise.all(rows.map(r=>hydrate(table,r,sel)));
+      },
+      async single(){const out=await api._run();return {data:out[0]||null,error:out[0]?null:{message:'not found'}};},
+      async maybeSingle(){const out=await api._run();return {data:out[0]||null,error:null};},
+      then(res,rej){api._run().then(out=>res({data:out,error:null})).catch(e=>res({data:null,error:e}));},
+      insert(payload){
+        const run=async()=>{
+          const arr=Array.isArray(payload)?payload:[payload];
+          const created=[];
+          for(const p of arr){
+            const row=withCreatedAt(p);
+            let ref;
+            if('id' in row&&row.id!==null&&row.id!==undefined){ref=db.collection(table).doc(String(row.id));}
+            else{ref=db.collection(table).doc();}
+            await ref.set(stripId(row));
+            created.push({...row,id:ref.id});
+          }
+          return created;
+        };
+        const pr=run();
+        return {
+          then(res,rej){pr.then(created=>res({data:created,error:null})).catch(e=>res({data:null,error:e}));},
+          select:()=>({single:async()=>{
+            try{const created=await pr;return {data:created[0]||null,error:null};}
+            catch(e){return {data:null,error:e};}
+          }})
+        };
+      },
+      update(patch){
+        return {eq:async(col,val)=>{
+          try{
+            if(col==='id'){await db.collection(table).doc(String(val)).update(patch);}
+            else{
+              const snap=await db.collection(table).where(col,'==',val).get();
+              for(const d of snap.docs)await d.ref.update(patch);
+            }
+            return {data:null,error:null};
+          }catch(e){return {data:null,error:e};}
+        }};
+      },
+      upsert(payload){
+        const run=async()=>{
+          const arr=Array.isArray(payload)?payload:[payload];
+          for(const p of arr){
+            const key=('id' in p)?p.id:('user_id' in p)?p.user_id:null;
+            const ref=key!==null?db.collection(table).doc(String(key)):db.collection(table).doc();
+            await ref.set(stripId(withCreatedAt(p)),{merge:true});
+          }
+          return arr;
+        };
+        return {then(res,rej){run().then(a=>res({data:a,error:null})).catch(e=>res({data:null,error:e}));}};
+      },
+      delete(){
+        const delWhere=async(pairs)=>{
+          const snap=await pairs.reduce((q,[c,v])=>q.where(c,'==',v),db.collection(table)).get();
+          for(const d of snap.docs)await d.ref.delete();
+        };
+        return {eq:(col,val)=>{
+          const second={
+            eq:async(c2,v2)=>{
+              try{
+                if(col==='id'){ /* id + 条件の複合は未使用だが安全側に */
+                  const r=await docData(table,val);
+                  if(r&&r[c2]===v2)await db.collection(table).doc(String(val)).delete();
+                }else{await delWhere([[col,val],[c2,v2]]);}
+                return {error:null};
+              }catch(e){return {error:e};}
+            },
+            then(res,rej){
+              (async()=>{
+                if(col==='id')await db.collection(table).doc(String(val)).delete();
+                else await delWhere([[col,val]]);
+              })().then(()=>res({error:null})).catch(e=>res({error:e}));
+            }
+          };
+          return second;
+        }};
+      },
+    };
+    return api;
+  }
+
+  const authUser=(u)=>u?{id:u.uid,email:u.email}:null;
+  const waitAuth=()=>new Promise(res=>{const off=auth.onAuthStateChanged(u=>{off();res(u);});});
+
+  return {
+    from:(t)=>query(t),
+    auth:{
+      async getSession(){const u=await waitAuth();return {data:{session:u?{user:authUser(u)}:null},error:null};},
+      async getUser(){const u=auth.currentUser||await waitAuth();return {data:{user:authUser(u)},error:null};},
+      async signUp({email,password}){
+        try{const cred=await auth.createUserWithEmailAndPassword(email,password);
+          return {data:{user:authUser(cred.user)},error:null};}
+        catch(e){return {data:null,error:{message:e.code||e.message}};}
+      },
+      async signInWithPassword({email,password}){
+        try{
+          if(auth.currentUser&&auth.currentUser.email===email)return {data:{user:authUser(auth.currentUser)},error:null};
+          const cred=await auth.signInWithEmailAndPassword(email,password);
+          return {data:{user:authUser(cred.user)},error:null};}
+        catch(e){return {data:null,error:{message:e.code||e.message}};}
+      },
+      async signOut(){await auth.signOut();return {error:null};},
+      async updateUser({password}){
+        try{await auth.currentUser.updatePassword(password);return {data:null,error:null};}
+        catch(e){return {data:null,error:{message:translateErr(e.code||e.message)}};}
+      },
+    },
+    storage:{
+      from:(bucket)=>({
+        async list(prefix){
+          try{const res=await fst.ref(`${bucket}/${prefix}`).listAll();
+            return {data:res.items.map(i=>({name:i.name})),error:null};}
+          catch(e){return {data:[],error:e};}
+        },
+        async createSignedUrl(path){
+          try{const url=await fst.ref(`${bucket}/${path}`).getDownloadURL();
+            return {data:{signedUrl:url},error:null};}
+          catch(e){return {data:null,error:e};}
+        },
+        async upload(path,blob,opt){
+          try{await fst.ref(`${bucket}/${path}`).put(blob,{contentType:(opt&&opt.contentType)||'application/octet-stream'});
+            return {data:{path},error:null};}
+          catch(e){return {data:null,error:{message:e.code==='storage/unauthorized'?'権限がありません（管理者のみ）':(e.message||'アップロードに失敗しました')}};}
+        },
+        async remove(paths){
+          try{for(const p of paths)await fst.ref(`${bucket}/${p}`).delete();return {data:null,error:null};}
+          catch(e){return {data:null,error:e};}
+        },
+      }),
+    },
+  };
+}
+
 /* ---------- 認証UI ---------- */
 function setAuthMode(m){
   authMode=m;
@@ -607,9 +837,14 @@ async function doAuth(){
   }
 }
 function translateErr(m){
-  if(/Invalid login/i.test(m))return'メールまたはパスワードが違います';
-  if(/already registered/i.test(m))return'このメールは既に登録されています';
-  if(/at least 6/i.test(m))return'パスワードは6文字以上にしてください';
+  m=String(m||'');
+  if(/Invalid login|invalid-credential|invalid-login-credentials|wrong-password|user-not-found/i.test(m))return'メールまたはパスワードが違います';
+  if(/already registered|email-already-in-use/i.test(m))return'このメールは既に登録されています';
+  if(/at least 6|weak-password/i.test(m))return'パスワードは6文字以上にしてください';
+  if(/invalid-email/i.test(m))return'メールアドレスの形式が正しくありません';
+  if(/too-many-requests/i.test(m))return'試行回数が多すぎます。しばらく待ってからお試しください';
+  if(/requires-recent-login/i.test(m))return'安全のため、いったんログアウトして再ログインしてから変更してください';
+  if(/network-request-failed/i.test(m))return'通信エラーです。電波の良い場所でお試しください';
   return m;
 }
 
